@@ -3,7 +3,7 @@
 A QR-code web game for club mixers. Guests scan, type their name, and play from their phone:
 
 - **Bingo**: "find someone who…", a 5×5 card with points per square and a bonus for each full line
-- **Team up**: challenges done with a big, proved with a photo or video
+- **Team up**: challenges where a น้อง teams up with a พี่ (upperclassman), proved with a photo or video
 - **Perform**: show something Thai, sing a Thai song… on video
 - **Leaderboard**: live points and rank
 

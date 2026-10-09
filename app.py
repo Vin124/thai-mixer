@@ -63,7 +63,8 @@ app.config.update(
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
-ROLES = {"big": "Big", "little": "Little", "new": "New member", "other": "Guest"}
+ROLES = {"phi": "พี่", "nong": "น้อง"}
+ROLE_HINTS = {"phi": "upperclassman", "nong": "new member"}
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"}
 VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/webm"}
 EXTENSIONS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
@@ -126,7 +127,7 @@ def leaderboard(limit=None):
 def join_page():
     if current_player():
         return redirect(url_for("play"))
-    return render_template("join.html", event=content.EVENT_NAME, roles=ROLES, error=None)
+    return render_template("join.html", event=content.EVENT_NAME, roles=ROLES, hints=ROLE_HINTS, error=None)
 
 
 @app.post("/join")
@@ -136,13 +137,13 @@ def join():
     if not name:
         error = "Type your name so people can find you."
     elif role not in ROLES:
-        error = "Pick one: big, little, new member or guest."
+        error = "Pick one: พี่ or น้อง."
     elif db.query("SELECT 1 FROM mixer_players WHERE name_key = ?", (name.lower(),), one=True):
         error = f"Someone already joined as “{name}”. Add your last initial or nickname."
     else:
         error = None
     if error:
-        return render_template("join.html", event=content.EVENT_NAME, roles=ROLES,
+        return render_template("join.html", event=content.EVENT_NAME, roles=ROLES, hints=ROLE_HINTS,
                                error=error, name=name, role=role), 400
 
     pid = str(uuid.uuid4())

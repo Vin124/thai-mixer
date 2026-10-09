@@ -10,7 +10,7 @@
     <div class="hero">
       <div class="emoji">🐘</div>
       <h1>{{ event }}</h1>
-      <p class="sub">Find people, team up with a big, show off — earn points.</p>
+      <p class="sub">Find people, team up with a พี่, show off — earn points.</p>
     </div>
 
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
@@ -26,7 +26,7 @@
         <div class="roles">
           {% for key, label in roles.items() %}
           <label><input type="radio" name="role" value="{{ key }}" required
-                        {% if role == key %}checked{% endif %}><span>{{ label }}</span></label>
+                        {% if role == key %}checked{% endif %}><span>{{ label }}<small class="role-hint">{{ hints[key] }}</small></span></label>
           {% endfor %}
         </div>
       </div>

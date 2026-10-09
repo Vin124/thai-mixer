@@ -73,6 +73,8 @@ h1 { font-size: 28px; font-weight: 700; }
 }
 .roles input { position: absolute; opacity: 0; pointer-events: none; }
 .roles input:checked + span { color: var(--red); }
+.roles .role-hint { display: block; font-size: 13px; font-weight: 500; color: var(--muted); }
+.roles label > span { font-size: 20px; }
 .roles label:has(input:checked) { border-color: var(--red); background: var(--red-soft); }
 
 /* ---------- join ---------- */
