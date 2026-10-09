@@ -72,6 +72,7 @@ async function refresh() {
     const r = await fetch("/api/me");
     if (r.status === 401) return (location.href = "/");
     const me = await r.json();
+    Object.assign(G, me.game); // picks up activity edits made in /admin/content
     subs = me.submissions;
     $("points").textContent = me.points;
     $("rank").textContent = me.rank ? `#${me.rank} of ${me.players}` + (me.lines ? ` · ${me.lines} bingo` : "") : "";

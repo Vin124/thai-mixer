@@ -13,12 +13,18 @@ Photos and videos go to an **admin queue**. Approved ones appear on the **projec
 |---|---|---|
 | `/` | guests | join, then play |
 | `/screen` | projector | live photo/video feed, top 10, QR |
-| `/admin` | organizers | approve or reject media, full leaderboard |
+| `/admin` | organizers | approve or reject media, edit activities, fix anyone's score |
 | `/qr` | print it | a big QR code pointing at the site |
 
 ## Change the activities
 
-All the content is in **`content.py`**: bingo traits (exactly 24), challenges, performances, points, and what proof each one needs (`name`, `photo`, `video` or `either`). Don't change ids or reorder the bingo traits once people have started playing, because submissions are saved against them.
+Log into `/admin` and open **Edit activities**. From there you can rewrite any bingo square, add, reorder or delete challenges and performances, and change points and what proof each one needs. Edits are saved in the database, and players' phones pick them up within about 15 seconds.
+
+`content.py` holds the starting activities, which are used until something is saved in the editor. **Reset** in the editor goes back to them.
+
+## Fix scores
+
+Tap a player's name on the admin leaderboard to see everything they've submitted, including bingo names, which never go through the approval queue. **Remove points** takes off the points for anything that doesn't count, and the player can redo it. You can also delete a player entirely, for example someone who joined with a joke name.
 
 ## Run it on your computer
 

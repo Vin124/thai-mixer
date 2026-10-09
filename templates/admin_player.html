@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>{{ player.name }} · Admin</title>
+</head>
+<body>
+  <div class="flag"></div>
+  <main class="admin">
+    {% include "_admin_nav.html" %}
+    <p><a href="{{ url_for('admin') }}">← Back to approvals</a></p>
+    <header>
+      <div>
+        <h1>{{ player.name }} <small class="sub">{{ role }}</small></h1>
+        <p class="sub">{{ points }} points · {{ lines }} bingo line{{ '' if lines == 1 else 's' }} · {{ subs|length }} submissions</p>
+      </div>
+      <form method="post" action="{{ url_for('admin_player_delete', player_id=player.id) }}"
+            onsubmit='return confirm({{ ("Delete " ~ player.name ~ " and everything they submitted? This can’t be undone.") | tojson }})'>
+        <button class="btn ghost small" type="submit">Delete player</button>
+      </form>
+    </header>
+
+    <h2>Submissions</h2>
+    <p class="hint">Removing one takes its points away. The player sees “Rejected — try again” and can resubmit.</p>
+    {% if subs %}
+    <div class="queue">
+      {% for s in subs %}
+      <div class="qitem {{ 'is-rejected' if s.status == 'rejected' }}">
+        {% if s.url %}
+        <div class="media">
+          {% if s.media_type == 'video' %}<video src="{{ s.url }}" controls playsinline preload="metadata"></video>
+          {% else %}<img src="{{ s.url }}" alt="" loading="lazy">{% endif %}
+        </div>
+        {% endif %}
+        <div class="info">
+          <span class="chip {{ s.status }}">{{ {'done': 'Counted', 'pending': 'Waiting for approval', 'approved': 'Approved', 'rejected': 'Removed'}[s.status] }}</span>
+          <strong style="display:block;margin-top:6px">{{ s.title }}</strong>
+          <p>{{ s.kind }} · +{{ s.points }}</p>
+          {% if s.note %}<p>Found: <b>{{ s.note }}</b></p>{% endif %}
+        </div>
+        {% if s.status != 'rejected' %}
+        <div class="row">
+          {% if s.status == 'pending' %}
+          <form method="post" action="{{ url_for('admin_review') }}">
+            <input type="hidden" name="id" value="{{ s.id }}"><input type="hidden" name="back" value="player">
+            <button class="btn green small" style="width:100%" name="action" value="approve">Approve</button></form>
+          {% endif %}
+          <form method="post" action="{{ url_for('admin_review') }}">
+            <input type="hidden" name="id" value="{{ s.id }}"><input type="hidden" name="back" value="player">
+            <button class="btn small" style="width:100%" name="action" value="reject">Remove points</button></form>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="empty">Nothing submitted yet.</div>{% endif %}
+  </main>
+</body>
+</html>

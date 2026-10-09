@@ -7,15 +7,10 @@
 <body>
   <div class="flag"></div>
   <main class="admin">
+    {% include "_admin_nav.html" %}
     <header>
       <h1>Review queue <small class="sub">({{ pending|length }} waiting)</small></h1>
-      <div class="links">
-        <a href="{{ url_for('admin') }}">↻ Refresh</a>
-        <a href="{{ url_for('screen') }}" target="_blank">Projector</a>
-        <a href="{{ url_for('qr') }}" target="_blank">QR code</a>
-        <form method="post" action="{{ url_for('admin_logout') }}" style="display:inline">
-          <button class="btn ghost small" type="submit">Sign out</button></form>
-      </div>
+      <a class="btn secondary small" href="{{ url_for('admin') }}">↻ Refresh</a>
     </header>
 
     <h2>Waiting for approval</h2>
@@ -67,10 +62,11 @@
     {% else %}<div class="empty">Nothing approved yet.</div>{% endif %}
 
     <h2>Leaderboard ({{ board|length }} players)</h2>
+    <p class="hint">Tap a name to see everything they submitted and remove anything that doesn't count.</p>
     <table class="lb">
       <tr><th>#</th><th>Name</th><th>Role</th><th>Bingo lines</th><th>Points</th></tr>
       {% for b in board %}
-      <tr><td>{{ loop.index }}</td><td>{{ b.name }}</td><td>{{ b.role }}</td><td>{{ b.lines }}</td><td><b>{{ b.points }}</b></td></tr>
+      <tr><td>{{ loop.index }}</td><td><a href="{{ url_for('admin_player', player_id=b.id) }}">{{ b.name }}</a></td><td>{{ b.role }}</td><td>{{ b.lines }}</td><td><b>{{ b.points }}</b></td></tr>
       {% endfor %}
     </table>
   </main>

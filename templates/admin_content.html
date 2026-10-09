@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>Edit activities · Admin</title>
+</head>
+<body>
+  <div class="flag"></div>
+  <main class="admin">
+    {% include "_admin_nav.html" %}
+    <h1>Edit activities</h1>
+    <p class="sub">Changes show up on everyone's phone the next time their page refreshes (within ~15 seconds).</p>
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    {% if saved %}<div class="saved">✓ Saved</div>{% endif %}
+
+    <form method="post" id="editor">
+      <input type="hidden" name="data" id="data">
+
+      <h2>Event</h2>
+      <div class="ed-grid3">
+        <label class="field"><span>Event name</span>
+          <input class="input" id="event_name" value="{{ data.event_name }}" maxlength="60" required></label>
+        <label class="field"><span>Points per bingo square</span>
+          <input class="input" id="square_points" type="number" min="0" max="100" value="{{ data.square_points }}" required></label>
+        <label class="field"><span>Bonus per full line</span>
+          <input class="input" id="line_bonus" type="number" min="0" max="100" value="{{ data.line_bonus }}" required></label>
+      </div>
+
+      <h2>Bingo card</h2>
+      <p class="hint">Edit any square's text. Players who already ticked a square keep it, so for a small fix that's fine. For a totally different trait mid-event, expect some confusion.</p>
+      <div class="ed-bingo">
+        {% for pos in range(25) %}
+          {% if pos == 12 %}
+            <textarea class="ed-sq free" id="free_square" maxlength="60" rows="3" required>{{ data.free_square }}</textarea>
+          {% else %}
+            {% set i = pos if pos < 12 else pos - 1 %}
+            <textarea class="ed-sq trait" maxlength="80" rows="3" required>{{ data.bingo_traits[i] }}</textarea>
+          {% endif %}
+        {% endfor %}
+      </div>
+
+      {% for key, label, prefix in [("challenges", "Team-up challenges", "c-"), ("performances", "Performances", "p-")] %}
+      <h2>{{ label }}</h2>
+      <div class="ed-list" data-list="{{ key }}">
+        {% for a in data[key] %}
+          {% with a=a %}{% include "_activity_row.html" %}{% endwith %}
+        {% endfor %}
+      </div>
+      <button type="button" class="btn secondary small ed-add" data-add="{{ key }}">+ Add {{ 'challenge' if key == 'challenges' else 'performance' }}</button>
+      {% endfor %}
+
+      <p class="hint" style="margin-top:24px">Deleting an activity removes its points from anyone who already did it.</p>
+
+      <div class="ed-savebar">
+        <button class="btn" type="submit">Save changes</button>
+      </div>
+    </form>
+
+    <form method="post" action="{{ url_for('admin_content_reset') }}" class="ed-reset"
+          onsubmit="return confirm('Throw away all edits and go back to the original activities?')">
+      <button class="btn ghost small" type="submit">Reset everything to the original activities</button>
+    </form>
+  </main>
+
+  <template id="row-template">
+    {% with a={"id": "", "title": "", "detail": "", "points": 5, "proof": "photo"} %}{% include "_activity_row.html" %}{% endwith %}
+  </template>
+
+  <script>
+    const form = document.getElementById("editor");
+    let dirty = false;
+    form.addEventListener("input", () => (dirty = true));
+    window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
+
+    document.querySelectorAll("[data-add]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const list = document.querySelector(`[data-list="${btn.dataset.add}"]`);
+        const row = document.getElementById("row-template").content.firstElementChild.cloneNode(true);
+        list.append(row);
+        row.querySelector("[data-f=title]").focus();
+        dirty = true;
+      })
+    );
+
+    form.addEventListener("click", (e) => {
+      const row = e.target.closest(".ed-row");
+      if (!row) return;
+      if (e.target.matches("[data-del]")) {
+        const title = row.querySelector("[data-f=title]").value || "this activity";
+        if (confirm(`Delete “${title}”?`)) { row.remove(); dirty = true; }
+      } else if (e.target.matches("[data-up]") && row.previousElementSibling) {
+        row.parentNode.insertBefore(row, row.previousElementSibling); dirty = true;
+      } else if (e.target.matches("[data-down]") && row.nextElementSibling) {
+        row.parentNode.insertBefore(row.nextElementSibling, row); dirty = true;
+      }
+    });
+
+    form.addEventListener("submit", () => {
+      const rows = (key) => [...document.querySelectorAll(`[data-list="${key}"] .ed-row`)].map((r) => ({
+        id: r.dataset.id,
+        title: r.querySelector("[data-f=title]").value,
+        detail: r.querySelector("[data-f=detail]").value,
+        points: r.querySelector("[data-f=points]").value,
+        proof: r.querySelector("[data-f=proof]").value,
+      }));
+      document.getElementById("data").value = JSON.stringify({
+        event_name: document.getElementById("event_name").value,
+        square_points: document.getElementById("square_points").value,
+        line_bonus: document.getElementById("line_bonus").value,
+        free_square: document.getElementById("free_square").value,
+        bingo_traits: [...document.querySelectorAll(".ed-sq.trait")].map((t) => t.value),
+        challenges: rows("challenges"),
+        performances: rows("performances"),
+      });
+      dirty = false;
+    });
+  </script>
+</body>
+</html>

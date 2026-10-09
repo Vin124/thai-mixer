@@ -81,7 +81,14 @@ def init_db():
             reviewed_at TEXT,
             UNIQUE (player_id, activity_id)
         )""")
+    # Activities edited from /admin/content (JSON), see game.py.
+    query("""
+        CREATE TABLE IF NOT EXISTS mixer_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )""")
     if USE_PG:
+        query("ALTER TABLE mixer_settings ENABLE ROW LEVEL SECURITY")
         # Supabase exposes public tables through its REST API using the
         # anon key. RLS with no policies shuts that door; this app connects
         # as the database owner, which RLS doesn't apply to.

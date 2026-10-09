@@ -1,0 +1,21 @@
+<div class="ed-row" data-id="{{ a.id }}">
+  <div class="ed-main">
+    <input class="input" data-f="title" value="{{ a.title }}" maxlength="100" placeholder="Title, e.g. Team up with a พี่ to…" required>
+    <input class="input" data-f="detail" value="{{ a.detail }}" maxlength="200" placeholder="Extra instructions (optional)">
+  </div>
+  <div class="ed-side">
+    <label>Points <input class="input" data-f="points" type="number" min="0" max="100" value="{{ a.points }}" required></label>
+    <label>Proof
+      <select class="input" data-f="proof">
+        {% for value, text in [("photo", "Photo"), ("video", "Video"), ("either", "Photo or video"), ("name", "Just a name")] %}
+        <option value="{{ value }}" {% if a.proof == value %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="ed-tools">
+      <button type="button" class="btn ghost small" data-up title="Move up">↑</button>
+      <button type="button" class="btn ghost small" data-down title="Move down">↓</button>
+      <button type="button" class="btn ghost small ed-del" data-del>Delete</button>
+    </div>
+  </div>
+</div>

@@ -1,7 +1,7 @@
 """
-content.py — every activity people see on their phones. Edit this file to
-change the bingo traits, challenges and performances; nothing else needs to
-change.
+content.py — the starting activities. The easy way to change them is the
+editor at /admin/content; once something is saved there it replaces
+everything in this file ("Reset to defaults" in the editor comes back here).
 
 Rules of thumb:
 - Keep each `id` the same once the event has started. Submissions are saved
@@ -82,21 +82,4 @@ PERFORMANCES = [
      "detail": "Film it. Laughing is allowed."},
 ]
 
-
-def _bingo_squares():
-    squares = [{"id": f"b{i}", "title": t, "points": BINGO_SQUARE_POINTS,
-                "proof": "name", "detail": "Who is it?"}
-               for i, t in enumerate(BINGO_TRAITS)]
-    squares.insert(12, {"id": "free", "title": FREE_SQUARE, "points": 0,
-                        "proof": "none", "detail": ""})
-    return squares
-
-
-BINGO = _bingo_squares()
-assert len(BINGO) == 25, "BINGO_TRAITS needs exactly 24 entries"
-
-# Every activity a player can submit to, by id.
-ACTIVITIES = {a["id"]: {**a, "kind": kind}
-              for kind, items in (("bingo", BINGO), ("challenge", CHALLENGES),
-                                  ("perform", PERFORMANCES))
-              for a in items if a["proof"] != "none"}
+assert len(BINGO_TRAITS) == 24, "BINGO_TRAITS needs exactly 24 entries"
