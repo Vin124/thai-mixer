@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>Admin · Mixer</title>
+</head>
+<body>
+  <div class="flag"></div>
+  <main class="admin">
+    <header>
+      <h1>Review queue <small class="sub">({{ pending|length }} waiting)</small></h1>
+      <div class="links">
+        <a href="{{ url_for('admin') }}">↻ Refresh</a>
+        <a href="{{ url_for('screen') }}" target="_blank">Projector</a>
+        <a href="{{ url_for('qr') }}" target="_blank">QR code</a>
+        <form method="post" action="{{ url_for('admin_logout') }}" style="display:inline">
+          <button class="btn ghost small" type="submit">Sign out</button></form>
+      </div>
+    </header>
+
+    <h2>Waiting for approval</h2>
+    {% if pending %}
+    <div class="queue">
+      {% for s in pending %}
+      <div class="qitem">
+        <div class="media">
+          {% if s.media_type == 'video' %}<video src="{{ s.url }}" controls playsinline preload="metadata"></video>
+          {% else %}<img src="{{ s.url }}" alt="" loading="lazy">{% endif %}
+        </div>
+        <div class="info">
+          <strong>{{ s.name }}</strong>
+          <p>{{ s.title }} · +{{ s.points }}</p>
+          {% if s.note %}<p>Found: {{ s.note }}</p>{% endif %}
+        </div>
+        <div class="row">
+          <form method="post" action="{{ url_for('admin_review') }}">
+            <input type="hidden" name="id" value="{{ s.id }}">
+            <button class="btn green small" style="width:100%" name="action" value="approve">Approve</button></form>
+          <form method="post" action="{{ url_for('admin_review') }}">
+            <input type="hidden" name="id" value="{{ s.id }}">
+            <button class="btn small" style="width:100%" name="action" value="reject">Reject</button></form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="empty">All caught up 🎉</div>{% endif %}
+
+    <h2>On the big screen</h2>
+    {% if approved %}
+    <div class="queue">
+      {% for s in approved %}
+      <div class="qitem">
+        <div class="media">
+          {% if s.media_type == 'video' %}<video src="{{ s.url }}" controls playsinline preload="metadata"></video>
+          {% else %}<img src="{{ s.url }}" alt="" loading="lazy">{% endif %}
+        </div>
+        <div class="info"><strong>{{ s.name }}</strong><p>{{ s.title }}</p></div>
+        <div class="row">
+          <form method="post" action="{{ url_for('admin_review') }}"
+                onsubmit="return confirm('Take this down and remove its points?')">
+            <input type="hidden" name="id" value="{{ s.id }}">
+            <button class="btn secondary small" style="width:100%" name="action" value="reject">Take down</button></form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="empty">Nothing approved yet.</div>{% endif %}
+
+    <h2>Leaderboard ({{ board|length }} players)</h2>
+    <table class="lb">
+      <tr><th>#</th><th>Name</th><th>Role</th><th>Bingo lines</th><th>Points</th></tr>
+      {% for b in board %}
+      <tr><td>{{ loop.index }}</td><td>{{ b.name }}</td><td>{{ b.role }}</td><td>{{ b.lines }}</td><td><b>{{ b.points }}</b></td></tr>
+      {% endfor %}
+    </table>
+  </main>
+</body>
+</html>

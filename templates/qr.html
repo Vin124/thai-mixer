@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>QR · {{ event }}</title>
+  <style>
+    body { background: #fff; }
+    .poster { max-width: 520px; margin: 0 auto; padding: 40px 16px; text-align: center; }
+    #qr { width: min(80vw, 380px); margin: 28px auto; }
+    #qr img, #qr canvas { width: 100% !important; height: auto !important; }
+    .url { font-size: 18px; color: var(--muted); word-break: break-all; }
+    @media print { .noprint { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="flag"></div>
+  <main class="poster">
+    <h1>{{ event }}</h1>
+    <p class="sub">Scan to join the games 🇹🇭</p>
+    <div id="qr"></div>
+    <p class="url">{{ url }}</p>
+    <button class="btn secondary small noprint" onclick="print()">Print</button>
+  </main>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    new QRCode(document.getElementById("qr"),
+      { text: {{ url | tojson }}, width: 760, height: 760, correctLevel: QRCode.CorrectLevel.M });
+  </script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>{{ event }}</title>
+</head>
+<body>
+  <div class="flag"></div>
+  <header class="topbar">
+    <div class="wrap">
+      <div class="who">
+        <div>
+          <div class="name">{{ player.name }}</div>
+          <div class="role">{{ role_label }}</div>
+        </div>
+        <div class="score">
+          <div class="pts"><span id="points">0</span> pts</div>
+          <div class="rank" id="rank">&nbsp;</div>
+        </div>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="bingo" aria-selected="true">Bingo</button>
+        <button class="tab" role="tab" data-tab="challenges" aria-selected="false">Team up</button>
+        <button class="tab" role="tab" data-tab="perform" aria-selected="false">Perform</button>
+        <button class="tab" role="tab" data-tab="board" aria-selected="false">Leaderboard</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section data-panel="bingo">
+      <p class="hint">Tap a square when you find someone who fits. Every full line is +{{ game.lineBonus }}.</p>
+      <div class="bingo" id="bingo"></div>
+    </section>
+    <section data-panel="challenges" hidden>
+      <p class="hint">Grab a big, do the thing, upload the proof.</p>
+      <div class="cards" id="challenges"></div>
+    </section>
+    <section data-panel="perform" hidden>
+      <p class="hint">Your moment on stage. Film it and upload.</p>
+      <div class="cards" id="perform"></div>
+    </section>
+    <section data-panel="board" hidden>
+      <ol class="board" id="board"></ol>
+    </section>
+
+    <form class="foot" method="post" action="{{ url_for('leave') }}"
+          onsubmit="return confirm('Leave this device? Your points stay, but you can\'t log back in as yourself.')">
+      <button class="btn ghost small" type="submit">Not {{ player.name }}?</button>
+    </form>
+  </main>
+
+  <div class="sheet-bg" id="sheet" hidden>
+    <form class="sheet" id="sheet-form">
+      <button type="button" class="close" id="sheet-close" aria-label="Close">×</button>
+      <h2 id="sheet-title"></h2>
+      <p class="sub" id="sheet-detail"></p>
+      <div id="sheet-status"></div>
+
+      <label class="field" id="note-field">
+        <span>Who did you find?</span>
+        <input class="input" name="note" id="note" maxlength="80" placeholder="Their name">
+      </label>
+
+      <label class="picker" id="picker">
+        <strong id="picker-label">📷 Add a photo</strong>
+        <small id="picker-hint"></small>
+        <input type="file" id="file">
+      </label>
+      <div class="preview" id="preview" hidden></div>
+
+      <div class="progress" id="progress" hidden><div></div></div>
+      <div class="error" id="sheet-error" hidden></div>
+
+      <button class="btn" type="submit" id="submit">Submit</button>
+      <div class="row">
+        <button class="btn ghost small" type="button" id="undo" hidden>Remove my submission</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script>window.GAME = {{ game | tojson }}; window.ME = {{ player.name | tojson }};</script>
+  <script src="{{ url_for('static', filename='play.js') }}"></script>
+</body>
+</html>

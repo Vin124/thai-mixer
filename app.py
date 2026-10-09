@@ -1,0 +1,357 @@
+"""
+app.py — the mixer web app. Guests scan the QR, type a name, and play:
+bingo (find someone who…), team-up challenges and performances, with
+photo/video proof. Admins approve media before it hits the projector.
+
+Pages:
+  /         join (or straight to /play if already joined)
+  /play     the player's phone view
+  /screen   projector: live photo/video feed + leaderboard
+  /admin    review queue (password: ADMIN_PASSWORD)
+  /qr       printable QR code that points at this site
+"""
+
+import os
+import secrets
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from flask import (Flask, abort, jsonify, redirect, render_template, request,
+                   send_from_directory, session, url_for)
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+import content
+import db
+import storage
+
+MAX_UPLOAD_MB = 50  # Supabase's free tier caps each file at 50 MB
+MAX_VIDEO_SECONDS = 30
+
+
+def _secret_key():
+    """FLASK_SECRET_KEY if set, else a random key saved next to the app so
+    logins survive restarts. Never a fixed default: anyone who knew it could
+    forge an admin login."""
+    if os.environ.get("FLASK_SECRET_KEY"):
+        return os.environ["FLASK_SECRET_KEY"]
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".secret_key")
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        key = secrets.token_hex(32)
+        with open(path, "w") as f:
+            f.write(key)
+        return key
+
+
+app = Flask(__name__)
+# Hosts put a proxy in front of the app; this makes request.host_url (used
+# for the QR code) the real public https address.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+app.secret_key = _secret_key()
+app.config.update(
+    MAX_CONTENT_LENGTH=MAX_UPLOAD_MB * 1024 * 1024,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    SESSION_COOKIE_SAMESITE="Lax",
+    # https-only cookies once hosted; plain http is fine on your own computer.
+    SESSION_COOKIE_SECURE=(os.environ.get("COOKIE_SECURE") or ("1" if db.USE_PG else "0")) == "1",
+)
+
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+
+ROLES = {"big": "Big", "little": "Little", "new": "New member", "other": "Guest"}
+IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"}
+VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/webm"}
+EXTENSIONS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+              "image/heic": "heic", "image/heif": "heif", "video/mp4": "mp4",
+              "video/quicktime": "mov", "video/webm": "webm"}
+
+db.init_db()
+storage.init_storage()
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def current_player():
+    pid = session.get("player_id")
+    if not pid:
+        return None
+    return db.query("SELECT * FROM mixer_players WHERE id = ?", (pid,), one=True)
+
+
+def is_admin():
+    return session.get("admin") is True
+
+
+# ---------- scoring ----------
+
+BINGO_LINES = ([[r * 5 + c for c in range(5)] for r in range(5)] +
+               [[r * 5 + c for r in range(5)] for c in range(5)] +
+               [[i * 6 for i in range(5)], [(i + 1) * 4 for i in range(5)]])
+
+
+def score(done_ids):
+    """Points for a set of completed (non-rejected) activity ids."""
+    points = sum(content.ACTIVITIES[a]["points"] for a in done_ids if a in content.ACTIVITIES)
+    done_squares = {i for i, sq in enumerate(content.BINGO)
+                    if sq["id"] == "free" or sq["id"] in done_ids}
+    lines = sum(1 for line in BINGO_LINES if all(i in done_squares for i in line))
+    return points + lines * content.BINGO_LINE_BONUS, lines
+
+
+def leaderboard(limit=None):
+    players = db.query("SELECT id, name, role FROM mixer_players")
+    rows = db.query("SELECT player_id, activity_id FROM mixer_submissions WHERE status <> 'rejected'")
+    done = {}
+    for r in rows:
+        done.setdefault(r["player_id"], set()).add(r["activity_id"])
+    board = []
+    for p in players:
+        pts, lines = score(done.get(p["id"], set()))
+        board.append({"name": p["name"], "role": ROLES.get(p["role"], ""),
+                      "points": pts, "lines": lines, "id": p["id"]})
+    board.sort(key=lambda b: (-b["points"], b["name"].lower()))
+    return board[:limit] if limit else board
+
+
+# ---------- player pages ----------
+
+@app.route("/")
+def join_page():
+    if current_player():
+        return redirect(url_for("play"))
+    return render_template("join.html", event=content.EVENT_NAME, roles=ROLES, error=None)
+
+
+@app.post("/join")
+def join():
+    name = " ".join(request.form.get("name", "").split())[:40]
+    role = request.form.get("role", "")
+    if not name:
+        error = "Type your name so people can find you."
+    elif role not in ROLES:
+        error = "Pick one: big, little, new member or guest."
+    elif db.query("SELECT 1 FROM mixer_players WHERE name_key = ?", (name.lower(),), one=True):
+        error = f"Someone already joined as “{name}”. Add your last initial or nickname."
+    else:
+        error = None
+    if error:
+        return render_template("join.html", event=content.EVENT_NAME, roles=ROLES,
+                               error=error, name=name, role=role), 400
+
+    pid = str(uuid.uuid4())
+    db.query("INSERT INTO mixer_players (id, name, name_key, role, created_at) VALUES (?, ?, ?, ?, ?)",
+             (pid, name, name.lower(), role, now()))
+    session.permanent = True
+    session["player_id"] = pid
+    return redirect(url_for("play"))
+
+
+@app.post("/leave")
+def leave():
+    session.pop("player_id", None)
+    return redirect(url_for("join_page"))
+
+
+@app.route("/play")
+def play():
+    player = current_player()
+    if not player:
+        return redirect(url_for("join_page"))
+    return render_template(
+        "play.html", event=content.EVENT_NAME, player=player,
+        role_label=ROLES.get(player["role"], ""),
+        game={"bingo": content.BINGO, "challenges": content.CHALLENGES,
+              "performances": content.PERFORMANCES, "lineBonus": content.BINGO_LINE_BONUS,
+              "maxUploadMb": MAX_UPLOAD_MB, "maxVideoSeconds": MAX_VIDEO_SECONDS})
+
+
+@app.route("/api/me")
+def api_me():
+    player = current_player()
+    if not player:
+        return jsonify(error="not_joined"), 401
+    subs = db.query("SELECT * FROM mixer_submissions WHERE player_id = ?", (player["id"],))
+    pts, lines = score({s["activity_id"] for s in subs if s["status"] != "rejected"})
+    board = leaderboard()
+    rank = next((i + 1 for i, b in enumerate(board) if b["id"] == player["id"]), None)
+    return jsonify(
+        points=pts, lines=lines, rank=rank, players=len(board),
+        submissions={s["activity_id"]: {"status": s["status"], "note": s["note"],
+                                        "mediaUrl": storage.url(s["media_key"]),
+                                        "mediaType": s["media_type"]} for s in subs})
+
+
+@app.post("/api/submit")
+def api_submit():
+    player = current_player()
+    if not player:
+        return jsonify(error="Your session expired — rejoin from the QR code."), 401
+    activity = content.ACTIVITIES.get(request.form.get("activity_id", ""))
+    if not activity:
+        return jsonify(error="That activity doesn't exist anymore."), 400
+
+    existing = db.query("SELECT * FROM mixer_submissions WHERE player_id = ? AND activity_id = ?",
+                        (player["id"], activity["id"]), one=True)
+    if existing and existing["status"] == "approved":
+        return jsonify(error="Already approved — nice!"), 400
+
+    note = " ".join(request.form.get("note", "").split())[:80]
+    upload = request.files.get("media")
+    proof = activity["proof"]
+    if proof == "name" and not note:
+        return jsonify(error="Type the name of the person you found."), 400
+    if proof in ("photo", "video", "either") and not upload:
+        return jsonify(error="Add a photo or video as proof."), 400
+
+    media_key = media_type = None
+    if upload:
+        ctype = (upload.mimetype or "").lower()
+        kind = "image" if ctype in IMAGE_TYPES else "video" if ctype in VIDEO_TYPES else None
+        if kind is None:
+            return jsonify(error="That file type isn't supported — use a normal photo or video."), 400
+        if proof == "photo" and kind != "image":
+            return jsonify(error="This one needs a photo."), 400
+        if proof == "video" and kind != "video":
+            return jsonify(error="This one needs a video."), 400
+        data = upload.read()
+        if not data:
+            return jsonify(error="The file was empty — try again."), 400
+        media_key = f"{uuid.uuid4()}.{EXTENSIONS[ctype]}"
+        media_type = kind
+        storage.save(media_key, data, ctype)
+
+    status = "pending" if media_key else "done"
+    if existing:
+        if existing["media_key"]:
+            storage.delete(existing["media_key"])
+        db.query("""UPDATE mixer_submissions SET note = ?, media_key = ?, media_type = ?,
+                    status = ?, created_at = ?, reviewed_at = NULL WHERE id = ?""",
+                 (note, media_key, media_type, status, now(), existing["id"]))
+    else:
+        db.query("""INSERT INTO mixer_submissions
+                    (id, player_id, activity_id, note, media_key, media_type, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                 (str(uuid.uuid4()), player["id"], activity["id"], note,
+                  media_key, media_type, status, now()))
+    return jsonify(ok=True, status=status)
+
+
+@app.post("/api/undo")
+def api_undo():
+    player = current_player()
+    if not player:
+        return jsonify(error="not_joined"), 401
+    activity_id = request.form.get("activity_id", "")
+    sub = db.query("SELECT * FROM mixer_submissions WHERE player_id = ? AND activity_id = ?",
+                   (player["id"], activity_id), one=True)
+    if sub:
+        if sub["media_key"]:
+            storage.delete(sub["media_key"])
+        db.query("DELETE FROM mixer_submissions WHERE id = ?", (sub["id"],))
+    return jsonify(ok=True)
+
+
+@app.errorhandler(413)
+def too_large(_):
+    return jsonify(error=f"That file is over {MAX_UPLOAD_MB} MB — record a shorter clip."), 413
+
+
+# ---------- projector ----------
+
+@app.route("/screen")
+def screen():
+    return render_template("screen.html", event=content.EVENT_NAME)
+
+
+@app.route("/api/screen")
+def api_screen():
+    feed = db.query("""
+        SELECT s.id, s.activity_id, s.note, s.media_key, s.media_type, s.reviewed_at, p.name
+        FROM mixer_submissions s JOIN mixer_players p ON p.id = s.player_id
+        WHERE s.status = 'approved' AND s.media_key IS NOT NULL
+        ORDER BY s.reviewed_at DESC LIMIT 24""")
+    return jsonify(
+        feed=[{"id": f["id"], "name": f["name"], "note": f["note"],
+               "title": content.ACTIVITIES.get(f["activity_id"], {}).get("title", ""),
+               "url": storage.url(f["media_key"]), "type": f["media_type"]} for f in feed],
+        leaderboard=[{k: b[k] for k in ("name", "role", "points", "lines")}
+                     for b in leaderboard(10)])
+
+
+@app.route("/qr")
+def qr():
+    return render_template("qr.html", event=content.EVENT_NAME, url=request.host_url)
+
+
+@app.route("/media/<path:key>")
+def media(key):
+    if storage.USE_SUPABASE:
+        abort(404)
+    return send_from_directory(storage.LOCAL_DIR, key)
+
+
+# ---------- admin ----------
+
+@app.route("/admin", methods=["GET", "POST"])
+def admin():
+    if request.method == "POST":
+        if ADMIN_PASSWORD and secrets.compare_digest(
+                request.form.get("password", "").encode(), ADMIN_PASSWORD.encode()):
+            session["admin"] = True
+            return redirect(url_for("admin"))
+        return render_template("admin_login.html", error="Wrong password.",
+                               configured=bool(ADMIN_PASSWORD)), 401
+    if not is_admin():
+        return render_template("admin_login.html", error=None, configured=bool(ADMIN_PASSWORD))
+
+    def rows(status, limit):
+        subs = db.query(f"""
+            SELECT s.*, p.name FROM mixer_submissions s
+            JOIN mixer_players p ON p.id = s.player_id
+            WHERE s.status = ? AND s.media_key IS NOT NULL
+            ORDER BY s.created_at {'ASC' if status == 'pending' else 'DESC'} LIMIT {int(limit)}""",
+                        (status,))
+        for s in subs:
+            act = content.ACTIVITIES.get(s["activity_id"], {})
+            s["title"], s["points"] = act.get("title", s["activity_id"]), act.get("points", 0)
+            s["url"] = storage.url(s["media_key"])
+        return subs
+
+    return render_template("admin.html", pending=rows("pending", 50),
+                           approved=rows("approved", 30), board=leaderboard())
+
+
+@app.post("/admin/review")
+def admin_review():
+    if not is_admin():
+        abort(403)
+    sub = db.query("SELECT * FROM mixer_submissions WHERE id = ?", (request.form.get("id", ""),), one=True)
+    action = request.form.get("action")
+    if sub and action == "approve":
+        db.query("UPDATE mixer_submissions SET status = 'approved', reviewed_at = ? WHERE id = ?",
+                 (now(), sub["id"]))
+    elif sub and action == "reject":
+        # Rejecting removes the points and the file; the player can resubmit.
+        if sub["media_key"]:
+            storage.delete(sub["media_key"])
+        db.query("""UPDATE mixer_submissions SET status = 'rejected', media_key = NULL,
+                    reviewed_at = ? WHERE id = ?""", (now(), sub["id"]))
+    return redirect(url_for("admin"))
+
+
+@app.post("/admin/logout")
+def admin_logout():
+    session.pop("admin", None)
+    return redirect(url_for("admin"))
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5050))
+    app.run(host="0.0.0.0", port=port)  # set FLASK_DEBUG=1 for auto-reload while editing

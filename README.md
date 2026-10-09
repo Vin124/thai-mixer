@@ -1,0 +1,54 @@
+# Thai Club Mixer 🇹🇭
+
+A QR-code web game for club mixers. Guests scan, type their name, and play from their phone:
+
+- **Bingo**: "find someone who…", a 5×5 card with points per square and a bonus for each full line
+- **Team up**: challenges done with a big, proved with a photo or video
+- **Perform**: show something Thai, sing a Thai song… on video
+- **Leaderboard**: live points and rank
+
+Photos and videos go to an **admin queue**. Approved ones appear on the **projector page** next to the leaderboard and a QR code. Points count as soon as something is submitted; rejecting a submission takes the points away, and the player can resubmit.
+
+| Page | Who | What |
+|---|---|---|
+| `/` | guests | join, then play |
+| `/screen` | projector | live photo/video feed, top 10, QR |
+| `/admin` | organizers | approve or reject media, full leaderboard |
+| `/qr` | print it | a big QR code pointing at the site |
+
+## Change the activities
+
+All the content is in **`content.py`**: bingo traits (exactly 24), challenges, performances, points, and what proof each one needs (`name`, `photo`, `video` or `either`). Don't change ids or reorder the bingo traits once people have started playing, because submissions are saved against them.
+
+## Run it on your computer
+
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
+To use `/admin`, first create a `.env` file containing `ADMIN_PASSWORD=pick-something`. Then open http://localhost:5050. With no other settings it uses a local SQLite file (`mixer.db`) and an `uploads/` folder. To try it on your phone, use your computer's local IP (printed at startup) on the same Wi-Fi.
+
+## Host it for the event
+
+Most hosts wipe the server's disk on redeploy, so for the real event, store data and files in **Supabase** (free tier):
+
+1. Create a Supabase project.
+2. Set these environment variables on your host (see `.env.example`):
+   - `DATABASE_URL`: Project Settings → Database → Connection string → **Session pooler**
+   - `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` (the **service_role** key, which is secret and only goes on the server): Project Settings → API
+   - `ADMIN_PASSWORD`: admin stays off until this is set
+   - `FLASK_SECRET_KEY`: any long random string (`python -c "import secrets; print(secrets.token_hex(32))"`)
+3. Deploy to any Python host. On first start the app creates its tables (with row-level security on) and a public `mixer-media` storage bucket by itself.
+   - **Render**: New Web Service from this repo. Build `pip install -r requirements.txt`, start `gunicorn app:app --preload --workers 2 --threads 4 --timeout 120`.
+   - **Railway / Heroku-style hosts**: the `Procfile` is already set up.
+4. Open `/qr` on the live site and print it, open `/screen` on the projector laptop, and log into `/admin` on an organizer's phone.
+
+Free hosts (such as Render's free tier) go to sleep when no one is using them, so open the site a few minutes before the event starts.
+
+## Good to know
+
+- **Limits:** videos can be 30 s at most and files 50 MB at most (Supabase's free per-file cap). Photos are shrunk on the phone before upload, so they're fast even on bad Wi-Fi.
+- **iPhone videos** are often HEVC `.mov`, which Chrome on Windows may not play. Run the projector page in **Safari, or Edge with the HEVC extension**, or test one clip beforehand.
+- Joining doesn't need a password. If someone clears their browser they can't get back into their old player, so they join again under a slightly different name.
+- Media links are random and not listed anywhere, but anyone who has a link can open it. Rejecting a submission deletes its file.

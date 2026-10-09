@@ -1,0 +1,20 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Local-only data
+mixer.db
+.secret_key
+uploads/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store

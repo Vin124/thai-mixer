@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>Live · {{ event }}</title>
+  <style>
+    /* Projector view: dark so photos pop, big type readable from the back. */
+    body { background: #14122a; color: #fff; overflow: hidden; height: 100vh; }
+    .stage { display: grid; grid-template-columns: 1fr 360px; height: calc(100vh - 8px); }
+    .feed { padding: 24px; display: grid; gap: 14px; overflow: hidden;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); grid-auto-rows: 300px; }
+    .tile { position: relative; border-radius: 18px; overflow: hidden; background: #000;
+            animation: pop .6s ease; }
+    .tile img, .tile video { width: 100%; height: 100%; object-fit: cover; }
+    .tile .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 28px 14px 12px;
+                 background: linear-gradient(transparent, rgba(0,0,0,.8)); }
+    .tile .cap b { display: block; font-size: 18px; }
+    .tile .cap span { font-size: 14px; opacity: .85; }
+    .side { background: #1d1a3a; padding: 24px; display: flex; flex-direction: column; gap: 18px; }
+    .side h1 { font-size: 26px; }
+    .side h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #ffb3c0; margin-top: 8px; }
+    .scan { display: flex; gap: 14px; align-items: center; background: #fff; color: #1e1c33;
+            border-radius: 16px; padding: 12px; }
+    .scan #qr { width: 116px; height: 116px; flex: none; }
+    .scan #qr img, .scan #qr canvas { width: 116px !important; height: 116px !important; }
+    .scan b { font-size: 20px; display: block; }
+    .scan small { word-break: break-all; color: #6b6880; }
+    .lb { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; overflow: hidden; }
+    .lb li { display: flex; align-items: center; gap: 12px; font-size: 20px; padding: 8px 12px;
+             border-radius: 12px; background: rgba(255,255,255,.05); }
+    .lb .pos { width: 32px; text-align: center; font-weight: 700; }
+    .lb .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .lb .p { font-weight: 700; color: #ffb3c0; }
+    .waiting { grid-column: 1 / -1; display: grid; place-items: center; text-align: center;
+               font-size: 28px; opacity: .7; grid-row: span 2; }
+    @keyframes pop { from { transform: scale(.85); opacity: 0; } }
+  </style>
+</head>
+<body>
+  <div class="flag"></div>
+  <div class="stage">
+    <section class="feed" id="feed"><div class="waiting">Photos and videos will show up here 📸</div></section>
+    <aside class="side">
+      <h1>{{ event }}</h1>
+      <div class="scan">
+        <div id="qr"></div>
+        <div><b>Scan to play</b><small id="url"></small></div>
+      </div>
+      <h2>Leaderboard</h2>
+      <ol class="lb" id="lb"></ol>
+    </aside>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    const playUrl = location.origin + "/";
+    document.getElementById("url").textContent = playUrl.replace(/^https?:\/\//, "");
+    new QRCode(document.getElementById("qr"), { text: playUrl, width: 232, height: 232, correctLevel: QRCode.CorrectLevel.M });
+
+    const shown = new Map(); // id → tile, so existing videos keep playing between polls
+    function el(tag, cls, text) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text != null) e.textContent = text;
+      return e;
+    }
+
+    async function tick() {
+      let data;
+      try { data = await (await fetch("/api/screen")).json(); } catch (_) { return; }
+
+      const feed = document.getElementById("feed");
+      if (data.feed.length) {
+        const ids = new Set(data.feed.map((f) => f.id));
+        for (const [id, tile] of shown) if (!ids.has(id)) { tile.remove(); shown.delete(id); }
+        feed.querySelector(".waiting")?.remove();
+        data.feed.forEach((f, i) => {
+          let tile = shown.get(f.id);
+          if (!tile) {
+            tile = el("div", "tile");
+            const m = document.createElement(f.type === "video" ? "video" : "img");
+            m.src = f.url;
+            if (f.type === "video") Object.assign(m, { muted: true, autoplay: true, loop: true, playsInline: true });
+            const cap = el("div", "cap");
+            cap.append(el("b", null, f.name), el("span", null, f.note ? `${f.title} — ${f.note}` : f.title));
+            tile.append(m, cap);
+            shown.set(f.id, tile);
+          }
+          if (feed.children[i] !== tile) feed.insertBefore(tile, feed.children[i] || null);
+        });
+      }
+
+      const lb = document.getElementById("lb");
+      lb.replaceChildren(...data.leaderboard.map((b, i) => {
+        const li = el("li");
+        li.append(el("span", "pos", ["🥇", "🥈", "🥉"][i] || i + 1), el("span", "nm", b.name), el("span", "p", b.points));
+        return li;
+      }));
+    }
+    tick();
+    setInterval(tick, 5000);
+  </script>
+</body>
+</html>

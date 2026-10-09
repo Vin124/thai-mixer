@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>Admin · Mixer</title>
+</head>
+<body>
+  <div class="flag"></div>
+  <main class="wrap">
+    <div class="hero"><h1>Admin</h1><p class="sub">Approve photos and videos before they go on the big screen.</p></div>
+    {% if not configured %}
+      <div class="error">Admin is off: set the ADMIN_PASSWORD environment variable and restart.</div>
+    {% else %}
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      <form method="post">
+        <label class="field"><span>Password</span>
+          <input class="input" type="password" name="password" autocomplete="current-password" required autofocus></label>
+        <button class="btn" type="submit">Sign in</button>
+      </form>
+    {% endif %}
+  </main>
+</body>
+</html>
