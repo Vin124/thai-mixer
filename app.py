@@ -341,7 +341,8 @@ def admin():
         return subs
 
     return render_template("admin.html", pending=rows("pending", 50),
-                           approved=rows("approved", 30), board=leaderboard())
+                           approved=rows("approved", 60), hidden=rows("hidden", 60),
+                           board=leaderboard())
 
 
 @app.post("/admin/review")
@@ -359,6 +360,12 @@ def admin_review():
             storage.delete(sub["media_key"])
         db.query("""UPDATE mixer_submissions SET status = 'rejected', media_key = NULL,
                     reviewed_at = ? WHERE id = ?""", (now(), sub["id"]))
+    elif sub and action == "hide":
+        # Off the projector, but the player keeps the points.
+        db.query("UPDATE mixer_submissions SET status = 'hidden' WHERE id = ?", (sub["id"],))
+    elif sub and action == "caption":
+        note = " ".join(request.form.get("note", "").split())[:80]
+        db.query("UPDATE mixer_submissions SET note = ? WHERE id = ?", (note, sub["id"]))
     if sub and request.form.get("back") == "player":
         return redirect(url_for("admin_player", player_id=sub["player_id"]))
     return redirect(url_for("admin"))
@@ -399,6 +406,23 @@ def admin_player_delete(player_id):
     db.query("DELETE FROM mixer_submissions WHERE player_id = ?", (player_id,))
     db.query("DELETE FROM mixer_players WHERE id = ?", (player_id,))
     return redirect(url_for("admin"))
+
+
+@app.post("/admin/reset")
+def admin_reset():
+    """Start over: 'scores' clears every submission and file but keeps the
+    players; 'everything' removes the players too. Activities are untouched."""
+    if not is_admin():
+        abort(403)
+    what = request.form.get("what")
+    if request.form.get("confirm", "").strip().upper() != "RESET" or what not in ("scores", "everything"):
+        return redirect(url_for("admin", reset_error=1) + "#reset")
+    for s in db.query("SELECT media_key FROM mixer_submissions WHERE media_key IS NOT NULL"):
+        storage.delete(s["media_key"])
+    db.query("DELETE FROM mixer_submissions")
+    if what == "everything":
+        db.query("DELETE FROM mixer_players")
+    return redirect(url_for("admin", reset_done=what))
 
 
 @app.route("/admin/content", methods=["GET", "POST"])

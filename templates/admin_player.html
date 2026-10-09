@@ -33,7 +33,7 @@
         </div>
         {% endif %}
         <div class="info">
-          <span class="chip {{ s.status }}">{{ {'done': 'Counted', 'pending': 'Waiting for approval', 'approved': 'Approved', 'rejected': 'Removed'}[s.status] }}</span>
+          <span class="chip {{ s.status }}">{{ {'done': 'Counted', 'pending': 'Waiting for approval', 'approved': 'Approved', 'hidden': 'Hidden from screen', 'rejected': 'Removed'}[s.status] }}</span>
           <strong style="display:block;margin-top:6px">{{ s.title }}</strong>
           <p>{{ s.kind }} · +{{ s.points }}</p>
           {% if s.note %}<p>Found: <b>{{ s.note }}</b></p>{% endif %}

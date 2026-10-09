@@ -74,6 +74,8 @@ async function refresh() {
     const me = await r.json();
     Object.assign(G, me.game); // picks up activity edits made in /admin/content
     subs = me.submissions;
+    // Admin hid it from the projector; to the player it's still approved.
+    for (const s of Object.values(subs)) if (s.status === "hidden") s.status = "approved";
     $("points").textContent = me.points;
     $("rank").textContent = me.rank ? `#${me.rank} of ${me.players}` + (me.lines ? ` · ${me.lines} bingo` : "") : "";
     renderBingo();

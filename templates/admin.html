@@ -40,35 +40,94 @@
     </div>
     {% else %}<div class="empty">All caught up 🎉</div>{% endif %}
 
-    <h2>On the big screen</h2>
-    {% if approved %}
-    <div class="queue">
-      {% for s in approved %}
-      <div class="qitem">
+    {% macro media(s) %}
         <div class="media">
           {% if s.media_type == 'video' %}<video src="{{ s.url }}" controls playsinline preload="metadata"></video>
           {% else %}<img src="{{ s.url }}" alt="" loading="lazy">{% endif %}
         </div>
-        <div class="info"><strong>{{ s.name }}</strong><p>{{ s.title }}</p></div>
-        <div class="row">
-          <form method="post" action="{{ url_for('admin_review') }}"
-                onsubmit="return confirm('Take this down and remove its points?')">
+    {% endmacro %}
+
+    <h2>On the big screen <small class="sub">({{ approved|length }})</small></h2>
+    <p class="hint"><b>Hide</b> takes it off the projector but keeps the points. <b>Delete</b> removes it and the points.</p>
+    {% if approved %}
+    <div class="queue">
+      {% for s in approved %}
+      <div class="qitem">
+        {{ media(s) }}
+        <div class="info">
+          <strong>{{ s.name }}</strong><p>{{ s.title }}</p>
+          <form method="post" action="{{ url_for('admin_review') }}" class="caption-form">
             <input type="hidden" name="id" value="{{ s.id }}">
-            <button class="btn secondary small" style="width:100%" name="action" value="reject">Take down</button></form>
+            <input class="input" name="note" value="{{ s.note }}" maxlength="80" placeholder="Caption (optional)">
+            <button class="btn secondary small" name="action" value="caption">Save</button>
+          </form>
+        </div>
+        <div class="row">
+          <form method="post" action="{{ url_for('admin_review') }}">
+            <input type="hidden" name="id" value="{{ s.id }}">
+            <button class="btn secondary small" style="width:100%" name="action" value="hide">Hide</button></form>
+          <form method="post" action="{{ url_for('admin_review') }}"
+                onsubmit="return confirm('Delete this photo/video and remove its points?')">
+            <input type="hidden" name="id" value="{{ s.id }}">
+            <button class="btn small" style="width:100%" name="action" value="reject">Delete</button></form>
         </div>
       </div>
       {% endfor %}
     </div>
     {% else %}<div class="empty">Nothing approved yet.</div>{% endif %}
 
+    {% if hidden %}
+    <h2>Hidden from the screen <small class="sub">({{ hidden|length }}, points still count)</small></h2>
+    <div class="queue">
+      {% for s in hidden %}
+      <div class="qitem is-hidden">
+        {{ media(s) }}
+        <div class="info"><strong>{{ s.name }}</strong><p>{{ s.title }}{% if s.note %} — {{ s.note }}{% endif %}</p></div>
+        <div class="row">
+          <form method="post" action="{{ url_for('admin_review') }}">
+            <input type="hidden" name="id" value="{{ s.id }}">
+            <button class="btn green small" style="width:100%" name="action" value="approve">Show again</button></form>
+          <form method="post" action="{{ url_for('admin_review') }}"
+                onsubmit="return confirm('Delete this photo/video and remove its points?')">
+            <input type="hidden" name="id" value="{{ s.id }}">
+            <button class="btn small" style="width:100%" name="action" value="reject">Delete</button></form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     <h2>Leaderboard ({{ board|length }} players)</h2>
     <p class="hint">Tap a name to see everything they submitted and remove anything that doesn't count.</p>
-    <table class="lb">
-      <tr><th>#</th><th>Name</th><th>Role</th><th>Bingo lines</th><th>Points</th></tr>
+    <div class="lb-wrap"><table class="lb">
+      <tr><th>#</th><th>Name</th><th class="opt">Role</th><th class="opt">Lines</th><th>Points</th><th></th></tr>
       {% for b in board %}
-      <tr><td>{{ loop.index }}</td><td><a href="{{ url_for('admin_player', player_id=b.id) }}">{{ b.name }}</a></td><td>{{ b.role }}</td><td>{{ b.lines }}</td><td><b>{{ b.points }}</b></td></tr>
+      <tr><td>{{ loop.index }}</td><td><a href="{{ url_for('admin_player', player_id=b.id) }}">{{ b.name }}</a></td>
+        <td class="opt">{{ b.role }}</td><td class="opt">{{ b.lines }}</td><td><b>{{ b.points }}</b></td>
+        <td><form method="post" action="{{ url_for('admin_player_delete', player_id=b.id) }}"
+                  onsubmit='return confirm({{ ("Delete " ~ b.name ~ " and everything they submitted?") | tojson }})'>
+          <button class="btn ghost small ed-del" type="submit" title="Delete player">Delete</button></form></td></tr>
+      {% else %}
+      <tr><td colspan="6" class="sub">No one has joined yet.</td></tr>
       {% endfor %}
-    </table>
+    </table></div>
+
+    <h2 id="reset">Reset</h2>
+    {% if request.args.reset_done == 'scores' %}<div class="saved">✓ All scores and photos cleared. Players are still signed in.</div>
+    {% elif request.args.reset_done == 'everything' %}<div class="saved">✓ Everything cleared. Everyone has to join again.</div>
+    {% elif request.args.reset_error %}<div class="error">Type RESET in the box to confirm.</div>{% endif %}
+    <div class="danger">
+      <form method="post" action="{{ url_for('admin_reset') }}"
+            onsubmit="return confirm('Really reset? This can\'t be undone.')">
+        <p>Use this after a practice run. Your edited activities are kept either way.</p>
+        <label class="field"><span>Type RESET to confirm</span>
+          <input class="input" name="confirm" autocomplete="off" placeholder="RESET"></label>
+        <div class="row">
+          <button class="btn secondary small" name="what" value="scores">Reset all scores (keep players)</button>
+          <button class="btn small" name="what" value="everything">Delete everyone + all scores</button>
+        </div>
+      </form>
+    </div>
   </main>
 </body>
 </html>

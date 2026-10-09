@@ -253,3 +253,13 @@ table.lb td, table.lb th { padding: 8px 12px; border-bottom: 1px solid var(--lin
 .ed-savebar .btn { max-width: 320px; }
 .ed-reset { margin: 24px 0 48px; }
 .qitem.is-rejected { opacity: .55; }
+.qitem.is-hidden { opacity: .7; }
+.caption-form { display: flex; gap: 6px; margin-top: 8px; }
+.caption-form .input { padding: 8px 10px; font-size: 14px; }
+.danger { border: 1.5px solid var(--red); border-radius: var(--radius); padding: 16px; background: #fff; margin-bottom: 48px; }
+.danger p { margin: 0 0 4px; color: var(--muted); }
+.danger .row { flex-wrap: wrap; }
+.chip.hidden { background: var(--navy-soft); color: var(--navy); }
+.lb td form { margin: 0; }
+.lb-wrap { overflow-x: auto; }
+@media (max-width: 520px) { table.lb .opt { display: none; } table.lb td, table.lb th { padding: 8px 6px; } }
