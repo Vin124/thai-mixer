@@ -24,30 +24,30 @@ BINGO_LINE_BONUS = 5
 # Ids are b0..b23 by position, so don't reorder these once people have
 # started playing.
 BINGO_TRAITS = [
-    "Has been to Thailand in the last year",
-    "Has never been to Thailand",
-    "Can say a full sentence in Thai",
-    "Can write their name in Thai",
-    "Has a Thai nickname",
+    "Has met a Thai celebrity in person",
+    "Is from Bangkok",
+    "Is from ต่างจังหวัด (outside Bangkok)",
+    "Has forgotten how to write some Thai letters (ฃ ฅ ฆ…)",
+    "Their nickname is an English word (Bank, Ice, Beer…)",
     "Eats Thai food “phet mak” (very spicy)",
-    "Favorite Thai dish is NOT pad thai",
-    "Has tried durian",
+    "Can't handle spicy food (yes, really)",
+    "Loves durian",
     "Drinks Thai tea every week",
     "Watches Thai dramas or BL",
-    "Has celebrated Songkran",
-    "Has ridden a tuk-tuk",
-    "Can name 5 Thai provinces in 10 seconds",
+    "Missed Songkran at home this year",
+    "Went to an international school in Thailand",
+    "Has lived outside Thailand for 3+ years",
     "Has been to a wat (Thai temple) here",
     "Is a พี่ (upperclassman)",
     "Is a น้อง (new member)",
     "Speaks 3+ languages",
     "Has the same birth month as you",
     "Is in the same major as you",
-    "Can do a proper wai (make them show you)",
+    "Brought Thai snacks or มาม่า in their luggage",
     "Has a pet",
     "Can cook a Thai dish",
-    "Knows a Thai song by heart",
-    "Has never had mango sticky rice",
+    "Can do รำไทย (Thai dance) — make them show you",
+    "Has had to explain their nickname to a foreigner",
 ]
 
 FREE_SQUARE = "FREE — you showed up 🇹🇭"
@@ -56,9 +56,6 @@ CHALLENGES = [
     {"id": "c-wai-selfie", "points": 3, "proof": "photo",
      "title": "Team up with a พี่ for a wai selfie",
      "detail": "Both of you doing a proper wai."},
-    {"id": "c-teach-phrase", "points": 5, "proof": "video",
-     "title": "Team up with a พี่ to learn a Thai phrase",
-     "detail": "Film your พี่ teaching you and you saying it back."},
     {"id": "c-drama-poster", "points": 5, "proof": "photo",
      "title": "Team up with a พี่ to recreate a Thai drama poster",
      "detail": "Dramatic poses required."},
@@ -71,9 +68,6 @@ CHALLENGES = [
 ]
 
 PERFORMANCES = [
-    {"id": "p-show-thai", "points": 5, "proof": "either",
-     "title": "Show something Thai about you",
-     "detail": "A photo, a story, a skill, a snack — or take the penalty."},
     {"id": "p-sing", "points": 8, "proof": "video",
      "title": "Sing a Thai song",
      "detail": "Even one line counts — or take the penalty."},
