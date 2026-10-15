@@ -184,7 +184,7 @@ ASIAN_DIASPORA = {
 THAI_CLUB = {
     "id": "thai-club",
     "title": "Thai Club",
-    "emoji": "🇹🇭",
+    "emoji": "🐘",
     "description": "The original Thai Club mixer: พี่ meet น้อง with Thai-flavored bingo and challenges.",
     "pack": {
         "event_name": content.EVENT_NAME,

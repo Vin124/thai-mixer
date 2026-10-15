@@ -19,6 +19,7 @@ const STATUS_TEXT = {
 document.querySelectorAll(".tab").forEach((t) =>
   t.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", x === t));
+    t.scrollIntoView({ block: "nearest", inline: "nearest" }); // 6 tabs overflow on phones
     document.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== t.dataset.tab));
     if (t.dataset.tab === "board") loadBoard();
     if (t.dataset.tab === "vote") loadPhotos();
