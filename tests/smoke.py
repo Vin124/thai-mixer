@@ -163,6 +163,9 @@ pack = dict(g1["pack"])
 pack["free_square"] = "Changed"
 r = a.post(f"/g/{code1}/admin/content", data={"data": __import__("json").dumps(pack)})
 check("host can edit this game's activities", r.status_code == 200 and game.by_code(code1)["pack"]["free_square"] == "Changed")
+no_roles = {k: v for k, v in pack.items() if k != "roles"}
+a.post(f"/g/{code1}/admin/content", data={"data": __import__("json").dumps(no_roles)})
+check("an edit without a roles section keeps the roles", game.by_code(code1)["pack"]["roles"] == g1["pack"]["roles"])
 bad = dict(pack, bingo_traits=pack["bingo_traits"][:23])
 check("bad edits are refused", a.post(f"/g/{code1}/admin/content", data={"data": __import__("json").dumps(bad)}).status_code == 400)
 check("guest can't edit activities", b.post(f"/g/{code1}/admin/content", data={"data": "{}"}).status_code == 403)

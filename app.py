@@ -758,6 +758,8 @@ def admin_content():
             submitted = json.loads(request.form.get("data", ""))
         except ValueError:
             submitted = None
+        if isinstance(submitted, dict) and "roles" not in submitted:
+            submitted["roles"] = data.get("roles", [])  # editor without a roles section
         try:
             game.save_pack(g.game_row["id"], submitted)
             data, saved = game.by_code(g.code)["pack"], True
