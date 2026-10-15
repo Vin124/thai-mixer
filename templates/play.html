@@ -22,6 +22,8 @@
         <button class="tab" role="tab" data-tab="bingo" aria-selected="true">Bingo</button>
         <button class="tab" role="tab" data-tab="challenges" aria-selected="false">Team up</button>
         <button class="tab" role="tab" data-tab="perform" aria-selected="false">Perform</button>
+        <button class="tab" role="tab" data-tab="vote" aria-selected="false">Vote</button>
+        <button class="tab" role="tab" data-tab="winner" aria-selected="false">Winner</button>
         <button class="tab" role="tab" data-tab="board" aria-selected="false">Leaderboard</button>
       </nav>
     </div>
@@ -39,6 +41,14 @@
     <section data-panel="perform" hidden>
       <p class="hint">Your moment on stage. Film it and upload.</p>
       <div class="cards" id="perform"></div>
+    </section>
+    <section data-panel="vote" hidden>
+      <p class="hint">Upvote the best photos and videos. Most upvotes wins the photo prize.</p>
+      <div class="photos" id="photos"></div>
+    </section>
+    <section data-panel="winner" hidden>
+      <div id="winner"></div>
+      <ol class="board" id="runners-up"></ol>
     </section>
     <section data-panel="board" hidden>
       <ol class="board" id="board"></ol>

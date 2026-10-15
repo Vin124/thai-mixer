@@ -20,6 +20,8 @@ document.querySelectorAll(".tab").forEach((t) =>
     document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", x === t));
     document.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== t.dataset.tab));
     if (t.dataset.tab === "board") loadBoard();
+    if (t.dataset.tab === "vote") loadPhotos();
+    if (t.dataset.tab === "winner") loadWinner();
   })
 );
 
@@ -95,6 +97,102 @@ async function loadBoard() {
     const nm = el("span", "nm", b.name);
     if (b.role) nm.append(el("small", null, b.role));
     li.append(el("span", "pos", ["🥇", "🥈", "🥉"][i] || i + 1), nm, el("span", "p", b.points));
+    ol.append(li);
+  });
+}
+
+// ---------- photo voting ----------
+function mediaEl(p) {
+  const m = document.createElement(p.type === "video" ? "video" : "img");
+  m.src = p.url;
+  if (p.type === "video") {
+    m.controls = true; m.playsInline = true; m.preload = "metadata";
+  } else {
+    m.loading = "lazy"; m.alt = p.title;
+  }
+  return m;
+}
+
+function caption(p) {
+  const c = el("div", "cap");
+  c.append(el("strong", null, p.name), el("span", null, p.note ? `${p.title} · ${p.note}` : p.title));
+  return c;
+}
+
+function voteBar(p) {
+  const bar = el("div", "votes");
+  const score = el("span", "vscore", p.score);
+  if (p.mine) {
+    bar.append(el("span", "yours", "Your post"), score);
+    return bar;
+  }
+  const btn = (value, label, text) => {
+    const b = el("button", "vbtn", text);
+    b.type = "button";
+    b.setAttribute("aria-label", label);
+    b.setAttribute("aria-pressed", p.myVote === value);
+    b.addEventListener("click", () => vote(p, p.myVote === value ? 0 : value, bar));
+    return b;
+  };
+  bar.append(btn(1, "Upvote", "▲"), score, btn(-1, "Downvote", "▼"));
+  return bar;
+}
+
+async function vote(p, value, bar) {
+  const before = { myVote: p.myVote, score: p.score };
+  // Show it straight away; put it back if the server says no.
+  p.score += value - p.myVote;
+  p.myVote = value;
+  bar.replaceWith(voteBar(p));
+  const r = await send("POST", "/api/vote", form({ submission_id: p.id, value }));
+  if (r.status !== 200) {
+    Object.assign(p, before);
+    loadPhotos();
+    toast(r.body.error || "Vote didn't go through — try again.");
+  }
+}
+
+async function loadPhotos() {
+  const r = await fetch("/api/photos");
+  if (r.status === 401) return (location.href = "/");
+  const { photos } = await r.json();
+  const box = $("photos");
+  box.replaceChildren();
+  if (!photos.length) box.append(el("p", "hint", "No photos yet — post one from Team up or Perform."));
+  for (const p of photos) {
+    const card = el("figure", "photo");
+    card.append(mediaEl(p), caption(p));
+    card.lastChild.append(voteBar(p));
+    box.append(card);
+  }
+}
+
+async function loadWinner() {
+  const r = await fetch("/api/photos?order=top");
+  if (r.status === 401) return (location.href = "/");
+  const { photos } = await r.json();
+  const top = $("winner");
+  const ol = $("runners-up");
+  top.replaceChildren();
+  ol.replaceChildren();
+  if (!photos.length || photos[0].up === 0) {
+    top.append(el("p", "hint", "No votes yet — go to Vote and pick your favourites."));
+    return;
+  }
+  const w = photos[0];
+  const card = el("figure", "photo winner");
+  const cap = caption(w);
+  cap.append(el("span", "vscore", `${w.score} pts · ▲${w.up} ▼${w.down}`));
+  card.append(el("div", "crown", "🏆 Current winner"), mediaEl(w), cap);
+  top.append(card);
+  photos.slice(1, 10).forEach((p, i) => {
+    const li = el("li", p.mine ? "me" : "");
+    li.append(el("span", "pos", ["🥈", "🥉"][i] || i + 2), mediaEl(p));
+    li.lastChild.className = "thumb";
+    li.lastChild.controls = false;
+    const nm = el("span", "nm", p.name);
+    nm.append(el("small", null, p.title));
+    li.append(nm, el("span", "p", p.score));
     ol.append(li);
   });
 }

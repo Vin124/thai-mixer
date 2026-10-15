@@ -88,6 +88,16 @@ def init_db():
             reviewed_at TEXT,
             UNIQUE (player_id, activity_id)
         )""")
+    # One row per (photo, voter): value is +1 or -1. Votes go with the
+    # submission when it's deleted; api_submit clears them on a replace.
+    query("""
+        CREATE TABLE IF NOT EXISTS mixer_votes (
+            submission_id TEXT NOT NULL REFERENCES mixer_submissions(id) ON DELETE CASCADE,
+            player_id TEXT NOT NULL REFERENCES mixer_players(id) ON DELETE CASCADE,
+            value INTEGER NOT NULL CHECK (value IN (-1, 1)),
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (submission_id, player_id)
+        )""")
     # Activities edited from /admin/content (JSON), see game.py.
     query("""
         CREATE TABLE IF NOT EXISTS mixer_settings (
@@ -101,3 +111,4 @@ def init_db():
         # as the database owner, which RLS doesn't apply to.
         query("ALTER TABLE mixer_players ENABLE ROW LEVEL SECURITY")
         query("ALTER TABLE mixer_submissions ENABLE ROW LEVEL SECURITY")
+        query("ALTER TABLE mixer_votes ENABLE ROW LEVEL SECURITY")

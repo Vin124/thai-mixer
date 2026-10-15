@@ -152,6 +152,26 @@ h1 { font-size: 28px; font-weight: 700; }
 .board .nm small { color: var(--muted); font-weight: 500; margin-left: 6px; }
 .board .p { font-weight: 700; color: var(--red); }
 .board li.me { background: var(--red-soft); border-radius: 10px; }
+.board .thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+
+/* ---------- photo voting ---------- */
+.photos { display: grid; gap: 14px; }
+.photo { margin: 0; background: var(--card); border: 1.5px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.photo img, .photo video { display: block; width: 100%; max-height: 70vh; object-fit: cover; background: var(--navy-soft); }
+.photo .cap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 12px; }
+.photo .cap strong { font-size: 15px; }
+.photo .cap > span:not(.vscore) { color: var(--muted); font-size: 13px; flex: 1; min-width: 0; }
+.votes { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.vbtn {
+  width: 40px; height: 40px; border-radius: 999px; border: 1.5px solid var(--line);
+  background: #fff; color: var(--muted); font-size: 16px; cursor: pointer;
+}
+.vbtn[aria-pressed="true"]:first-child { background: var(--green); border-color: var(--green); color: #fff; }
+.vbtn[aria-pressed="true"]:last-child { background: var(--red); border-color: var(--red); color: #fff; }
+.vscore { min-width: 28px; text-align: center; font-weight: 700; color: var(--navy); }
+.votes .yours { color: var(--muted); font-size: 13px; }
+.photo.winner { border: 2px solid var(--gold); margin-bottom: 16px; }
+.photo.winner .crown { background: var(--gold); color: #fff; font-weight: 700; padding: 8px 12px; }
 
 /* bottom sheet */
 .sheet-bg {

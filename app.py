@@ -5,7 +5,7 @@ photo/video proof. Admins approve media before it hits the projector.
 
 Pages:
   /         join (or straight to /play if already joined)
-  /play     the player's phone view
+  /play     the player's phone view (incl. photo voting + winner)
   /screen   projector: live photo/video feed + leaderboard
   /admin    review queue (password: ADMIN_PASSWORD)
   /qr       printable QR code that points at this site
@@ -296,6 +296,8 @@ def api_submit():
     if existing:
         if existing["media_key"] and existing["media_key"] != media_key:
             storage.delete(existing["media_key"])
+            # Votes were for the old photo.
+            db.query("DELETE FROM mixer_votes WHERE submission_id = ?", (existing["id"],))
         db.query("""UPDATE mixer_submissions SET note = ?, media_key = ?, media_type = ?,
                     status = ?, created_at = ?, reviewed_at = ? WHERE id = ?""",
                  (note, media_key, media_type, status, now(), reviewed_at, existing["id"]))
@@ -321,6 +323,70 @@ def api_undo():
         if sub["media_key"]:
             storage.delete(sub["media_key"])
         db.query("DELETE FROM mixer_submissions WHERE id = ?", (sub["id"],))
+    return jsonify(ok=True)
+
+
+# ---------- photo voting ----------
+
+def photo_feed(viewer_id, order):
+    """Every photo/video on the projector with its vote totals and the
+    viewer's own vote. order: 'new' (newest first) or 'top' (best score
+    first; ties go to whoever posted first)."""
+    order_by = ("score DESC, up DESC, s.reviewed_at ASC" if order == "top"
+                else "s.reviewed_at DESC")
+    rows = db.query(f"""
+        SELECT s.id, s.player_id, s.activity_id, s.note, s.media_key, s.media_type, p.name,
+               COALESCE(SUM(v.value), 0) AS score,
+               COALESCE(SUM(CASE WHEN v.value = 1 THEN 1 ELSE 0 END), 0) AS up,
+               COALESCE(SUM(CASE WHEN v.value = -1 THEN 1 ELSE 0 END), 0) AS down,
+               MAX(CASE WHEN v.player_id = ? THEN v.value END) AS my_vote
+        FROM mixer_submissions s
+        JOIN mixer_players p ON p.id = s.player_id
+        LEFT JOIN mixer_votes v ON v.submission_id = s.id
+        WHERE s.status = 'approved' AND s.media_key IS NOT NULL
+        GROUP BY s.id, p.id
+        ORDER BY {order_by}""", (viewer_id,))
+    return [{"id": r["id"], "name": r["name"], "note": r["note"],
+             "title": cfg().ACTIVITIES.get(r["activity_id"], {}).get("title", ""),
+             "url": storage.url(r["media_key"]), "type": r["media_type"],
+             "score": int(r["score"]), "up": int(r["up"]), "down": int(r["down"]),
+             "myVote": r["my_vote"] or 0, "mine": r["player_id"] == viewer_id} for r in rows]
+
+
+@app.route("/api/photos")
+def api_photos():
+    player = current_player()
+    if not player:
+        return jsonify(error="not_joined"), 401
+    order = "top" if request.args.get("order") == "top" else "new"
+    return jsonify(photos=photo_feed(player["id"], order))
+
+
+@app.post("/api/vote")
+def api_vote():
+    """value 1 = up, -1 = down, 0 = take my vote back."""
+    player = current_player()
+    if not player:
+        return jsonify(error="Your session expired — rejoin from the QR code."), 401
+    value = request.form.get("value", type=int)
+    if value not in (-1, 0, 1):
+        return jsonify(error="Bad vote."), 400
+    sub = db.query("""SELECT id, player_id FROM mixer_submissions
+                      WHERE id = ? AND status = 'approved' AND media_key IS NOT NULL""",
+                   (request.form.get("submission_id", ""),), one=True)
+    if not sub:
+        return jsonify(error="That photo isn't up anymore."), 404
+    if sub["player_id"] == player["id"]:
+        return jsonify(error="You can't vote on your own photo."), 400
+    if value == 0:
+        db.query("DELETE FROM mixer_votes WHERE submission_id = ? AND player_id = ?",
+                 (sub["id"], player["id"]))
+    else:
+        db.query("""INSERT INTO mixer_votes (submission_id, player_id, value, created_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (submission_id, player_id)
+                    DO UPDATE SET value = excluded.value, created_at = excluded.created_at""",
+                 (sub["id"], player["id"], value, now()))
     return jsonify(ok=True)
 
 
@@ -410,6 +476,7 @@ def admin_review():
             storage.delete(sub["media_key"])
         db.query("""UPDATE mixer_submissions SET status = 'rejected', media_key = NULL,
                     reviewed_at = ? WHERE id = ?""", (now(), sub["id"]))
+        db.query("DELETE FROM mixer_votes WHERE submission_id = ?", (sub["id"],))
     elif sub and action == "hide":
         # Off the projector, but the player keeps the points.
         db.query("UPDATE mixer_submissions SET status = 'hidden' WHERE id = ?", (sub["id"],))
