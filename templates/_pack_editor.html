@@ -1,0 +1,144 @@
+{#- The pack editor, shared by the set builder and a game's "Edit activities"
+    page. Include it inside a <form>; it adds the hidden `data` field and fills
+    it with the pack as JSON on submit. Expects `data` (a pack dict, possibly a
+    half-valid one being re-shown after an error) and optionally `in_game`
+    (true on a running game's editor, for the warnings that only apply there).
+    Existing activity ids and role keys ride along in data-id / data-key so
+    submissions and players stay attached to them. -#}
+{%- macro role_row(r) -%}
+<div class="ed-row ed-role" data-key="{{ r.key or '' }}">
+  <div class="ed-main ed-role-main">
+    <input class="input" data-f="label" value="{{ r.label or '' }}" maxlength="20" placeholder="Role, e.g. Founder" required aria-label="Role name">
+    <input class="input" data-f="hint" value="{{ r.hint or '' }}" maxlength="40" placeholder="Short hint, e.g. building something" aria-label="Role hint">
+  </div>
+  <div class="ed-side">
+    <div class="ed-tools">
+      <button type="button" class="btn ghost small" data-up title="Move up">↑</button>
+      <button type="button" class="btn ghost small" data-down title="Move down">↓</button>
+      <button type="button" class="btn ghost small ed-del" data-del>Delete</button>
+    </div>
+  </div>
+</div>
+{%- endmacro -%}
+<div class="pack-editor">
+  <input type="hidden" name="data" id="data">
+
+  <h2>Event</h2>
+  <div class="ed-grid3">
+    <label class="field"><span>Event name</span>
+      <input class="input" id="event_name" value="{{ data.event_name }}" maxlength="60" required></label>
+    <label class="field"><span>Points per bingo square</span>
+      <input class="input" id="square_points" type="number" min="0" max="100" value="{{ data.square_points }}" required></label>
+    <label class="field"><span>Bonus per full line</span>
+      <input class="input" id="line_bonus" type="number" min="0" max="100" value="{{ data.line_bonus }}" required></label>
+  </div>
+
+  <h2>Bingo card</h2>
+  {% if in_game %}
+  <p class="hint">Edit any square's text. Players who already ticked a square keep it, so for a small fix that's fine. For a totally different trait mid-event, expect some confusion.</p>
+  {% else %}
+  <p class="hint">24 “find someone who…” squares around a free one in the middle.</p>
+  {% endif %}
+  <div class="ed-bingo">
+    {% for pos in range(25) %}
+      {% if pos == 12 %}
+        <textarea class="ed-sq free" id="free_square" maxlength="60" rows="3" required aria-label="Free square">{{ data.free_square }}</textarea>
+      {% else %}
+        {% set i = pos if pos < 12 else pos - 1 %}
+        <textarea class="ed-sq trait" maxlength="80" rows="3" required aria-label="Bingo square {{ i + 1 }}">{{ data.bingo_traits[i] if data.bingo_traits is sequence and data.bingo_traits is not string else '' }}</textarea>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  {% for key, label, noun in [("challenges", "Team-up challenges", "challenge"), ("performances", "Performances", "performance")] %}
+  <h2>{{ label }}</h2>
+  {% set rows = data[key] if data[key] is sequence and data[key] is not string and data[key] is not mapping else [] %}
+  <div class="ed-list" data-list="{{ key }}">
+    {% for a in rows if a is mapping %}
+      {% with a=a %}{% include "_activity_row.html" %}{% endwith %}
+    {% endfor %}
+  </div>
+  <button type="button" class="btn secondary small ed-add" data-add="{{ key }}" data-template="row-template">+ Add {{ noun }}</button>
+  {% endfor %}
+
+  {% if in_game %}
+  <p class="hint" style="margin-top:24px">Deleting an activity removes its points from anyone who already did it.</p>
+  {% endif %}
+
+  <h2>Roles</h2>
+  <p class="hint">Up to 4. Players pick one when they join, and it shows next to their name.
+    Leave the list empty to skip the question.{% if in_game %} People who already joined keep the role they picked; delete a role and theirs goes blank.{% endif %}</p>
+  {% set roles = data.roles if data.roles is sequence and data.roles is not string and data.roles is not mapping else [] %}
+  <div class="ed-list" data-list="roles" data-max="4">
+    {% for r in roles if r is mapping %}{{ role_row(r) }}{% endfor %}
+  </div>
+  <button type="button" class="btn secondary small ed-add" data-add="roles" data-template="role-template">+ Add role</button>
+
+  <template id="row-template">
+    {% with a={"id": "", "title": "", "detail": "", "points": 5, "proof": "photo"} %}{% include "_activity_row.html" %}{% endwith %}
+  </template>
+  <template id="role-template">{{ role_row({"key": "", "label": "", "hint": ""}) }}</template>
+</div>
+
+<script>
+  (() => {
+    const field = document.getElementById("data");
+    const form = field.form;
+    let dirty = false;
+    form.addEventListener("input", () => (dirty = true));
+    window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
+
+    const list = (key) => document.querySelector(`[data-list="${key}"]`);
+    const addButton = (key) => document.querySelector(`[data-add="${key}"]`);
+    const syncLimits = () => document.querySelectorAll("[data-list][data-max]").forEach((l) => {
+      addButton(l.dataset.list).disabled = l.children.length >= Number(l.dataset.max);
+    });
+    syncLimits();
+
+    document.querySelectorAll("[data-add]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const row = document.getElementById(btn.dataset.template).content.firstElementChild.cloneNode(true);
+        list(btn.dataset.add).append(row);
+        row.querySelector("input").focus();
+        dirty = true;
+        syncLimits();
+      })
+    );
+
+    form.addEventListener("click", (e) => {
+      const row = e.target.closest(".ed-row");
+      if (!row) return;
+      if (e.target.matches("[data-del]")) {
+        const name = row.querySelector("[data-f=title], [data-f=label]").value || "this row";
+        if (confirm(`Delete “${name}”?`)) { row.remove(); dirty = true; syncLimits(); }
+      } else if (e.target.matches("[data-up]") && row.previousElementSibling) {
+        row.parentNode.insertBefore(row, row.previousElementSibling); dirty = true;
+      } else if (e.target.matches("[data-down]") && row.nextElementSibling) {
+        row.parentNode.insertBefore(row.nextElementSibling, row); dirty = true;
+      }
+    });
+
+    // Built on submit. If this throws, `data` stays empty and the server
+    // refuses the save rather than storing half a pack.
+    form.addEventListener("submit", () => {
+      field.value = "";
+      const value = (row, f) => row.querySelector(`[data-f=${f}]`).value;
+      const rows = (key) => [...list(key).querySelectorAll(".ed-row")];
+      const activities = (key) => rows(key).map((r) => ({
+        id: r.dataset.id, title: value(r, "title"), detail: value(r, "detail"),
+        points: value(r, "points"), proof: value(r, "proof"),
+      }));
+      field.value = JSON.stringify({
+        event_name: document.getElementById("event_name").value,
+        square_points: document.getElementById("square_points").value,
+        line_bonus: document.getElementById("line_bonus").value,
+        free_square: document.getElementById("free_square").value,
+        bingo_traits: [...document.querySelectorAll(".ed-sq.trait")].map((t) => t.value),
+        challenges: activities("challenges"),
+        performances: activities("performances"),
+        roles: rows("roles").map((r) => ({ key: r.dataset.key, label: value(r, "label"), hint: value(r, "hint") })),
+      });
+      dirty = false;
+    });
+  })();
+</script>

@@ -8,16 +8,48 @@
   <div class="flag"></div>
   <main class="wrap wide">
     <p><a href="{{ url_for('home') }}">← Mixer home</a></p>
-    <h1>Sets</h1>
-    <div class="packs">
-      {% for p in library %}
-      <a class="pack" href="{{ url_for('new_game', pack=p.id) }}">
-        <span class="pack-emoji" aria-hidden="true">{{ p.emoji }}</span>
-        <h3>{{ p.title }}</h3>
-        <p>{{ p.description }}</p>
-      </a>
-      {% endfor %}
-    </div>
+    <h1>Your sets</h1>
+    <p class="sub">A set is a bingo card plus team-ups, performances and roles. Make one for your crowd, then start as many games from it as you like.</p>
+    <p class="set-new"><a class="btn" href="{{ url_for('sets_new') }}">+ New blank set</a></p>
+
+    <section class="section" aria-labelledby="mine">
+      <h2 id="mine">Your sets</h2>
+      {% if mine %}
+      <ul class="games">
+        {% for s in mine %}
+        <li class="game">
+          <span class="set-emoji" aria-hidden="true">{{ s.emoji }}</span>
+          <div class="body">
+            <strong>{{ s.title }}<span class="badge">{{ "Public" if s.public else "Private" }}</span></strong>
+            {% if s.description %}<span class="meta">{{ s.description }}</span>{% endif %}
+          </div>
+          <div class="actions">
+            <a class="btn secondary small" href="{{ url_for('sets_edit', set_id=s.id) }}">Edit</a>
+            <a class="btn small" href="{{ url_for('new_game', pack=s.id) }}">Start a game</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty">No sets yet. Start a blank one above, or copy a pack below and make it yours.</div>
+      {% endif %}
+    </section>
+
+    <section class="section" aria-labelledby="start-from">
+      <h2 id="start-from">Start from a pack</h2>
+      <p class="sub">Copy one and edit it — the original stays as it is.</p>
+      <div class="packs">
+        {% for p in others %}
+        <div class="pack">
+          <span class="pack-emoji" aria-hidden="true">{{ p.emoji }}</span>
+          <h3>{{ p.title }}</h3>
+          <p>{{ p.description }}</p>
+          {% if not p.builtin %}<span class="set-owner">by {{ p.owner or "someone" }}</span>{% endif %}
+          <a class="btn secondary small" href="{{ url_for('sets_new', **{'from': p.id}) }}">Copy &amp; edit</a>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
   </main>
 </body>
 </html>

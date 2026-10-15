@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>{{ "Edit set" if set_id else "New set" }} · Mixer</title>
+</head>
+<body>
+  <div class="flag"></div>
+  <main class="wrap wide set-edit">
+    <p><a href="{{ url_for('sets_index') }}">← Your sets</a></p>
+    <h1>{{ "Edit set" if set_id else "New set" }}</h1>
+    {% if note %}<p class="sub">{{ note }}</p>{% endif %}
+
+    {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+    {% if saved %}<div class="saved" role="status">✓ Saved</div>{% endif %}
+
+    <form method="post" action="{{ url_for('sets_edit', set_id=set_id) if set_id else url_for('sets_new') }}">
+      <section class="panel set-meta" aria-labelledby="about-set">
+        <h2 id="about-set">About this set</h2>
+        <div class="set-meta-grid">
+          <label class="field"><span>Name</span>
+            <input class="input" name="title" value="{{ meta.title }}" maxlength="40" required placeholder="e.g. Office holiday party"></label>
+          <label class="field"><span>Emoji</span>
+            <input class="input" name="emoji" value="{{ meta.emoji }}" maxlength="8" placeholder="🎲"></label>
+        </div>
+        <label class="field"><span>One-line description</span>
+          <input class="input" name="description" value="{{ meta.description }}" maxlength="140" placeholder="Who it's for, in a sentence"></label>
+        <label class="set-public">
+          <input type="checkbox" name="public" value="1" {% if meta.public %}checked{% endif %}>
+          <span><strong>Share publicly — anyone can find and use this set</strong>
+            <span class="hint">Games already made from it keep their own copy, whatever you change later.</span></span>
+        </label>
+      </section>
+
+      {% include "_pack_editor.html" %}
+
+      <div class="ed-savebar">
+        <button class="btn" type="submit">{{ "Save set" if set_id else "Create set" }}</button>
+      </div>
+    </form>
+
+    {% if set_id %}
+    <div class="set-actions">
+      <a class="btn secondary small" href="{{ url_for('new_game', pack=set_id) }}">Start a game with this set</a>
+      <form method="post" action="{{ url_for('sets_delete', set_id=set_id) }}"
+            onsubmit="return confirm('Delete this set? Games already made from it keep working.')">
+        <button class="btn ghost small ed-del" type="submit">Delete set</button>
+      </form>
+    </div>
+    {% endif %}
+  </main>
+</body>
+</html>

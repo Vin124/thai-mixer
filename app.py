@@ -781,9 +781,13 @@ def admin_content_reset():
     else:
         found = sets.load(row["pack_id"], row["host_id"]) if row["pack_id"] else None
         pack = found[1] if found else None
-    if pack:
-        pack["event_name"] = row["pack"]["event_name"]
-        game.save_pack(row["id"], pack)
+    if not pack:
+        return render_template(
+            "admin_content.html", data=row["pack"], proofs=game.PROOFS, saved=False,
+            error="The set this game was made from has been deleted or made private, "
+                  "so there's nothing to reset to. Your activities are unchanged."), 409
+    pack["event_name"] = row["pack"]["event_name"]
+    game.save_pack(row["id"], pack)
     return redirect(url_for("game_admin_content"))
 
 
