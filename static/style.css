@@ -3,42 +3,42 @@
    things get an inset pair. Shadows are never the only cue: every state also has a
    colour, border or icon, primary actions are solid accent, and focus rings are loud. */
 :root {
-  /* surface + shadows */
-  --bg: #ebe8f3;
-  --surface: #ebe8f3;
-  --shadow-dark: rgba(118, 108, 160, .38);
+  /* surface + shadows (warm cream, brown-tinted shadows) */
+  --bg: #f5ebdd;
+  --surface: #f5ebdd;
+  --shadow-dark: rgba(150, 110, 70, .34);
   --shadow-light: rgba(255, 255, 255, .95);
-  --edge: #7f7a9b;          /* ≥3:1 on --bg: form-field + control outlines */
-  --line: #d6d2e3;          /* decorative dividers only */
+  --edge: #8a7860;          /* 3.6:1 on --bg: form-field + control outlines */
+  --line: #dccfbd;          /* decorative dividers only */
 
   /* text */
-  --ink: #211e36;           /* 13.3:1 on --bg */
-  --muted: #56526f;         /* 6.1:1 on --bg */
+  --ink: #1e1c33;           /* 14.0:1 on --bg */
+  --muted: #65627a;         /* ~5.3:1 on --bg */
 
-  /* brand */
-  --accent: #5a2fe0;        /* white on it 7.2:1; on --bg 5.95:1 */
-  --accent-press: #4a22c8;
-  --accent-soft: #ddd4ff;
-  --pink: #e5157a;
-  --focus: #d1006b;         /* 4.4:1 on --bg */
+  /* brand: Thai flag red + navy */
+  --accent: #a51931;        /* white on it 7.6:1; on --bg 6.4:1 */
+  --accent-press: #861227;
+  --accent-soft: #fbe6ea;
+  --pink: #2d2a4a;          /* secondary brand colour (navy); name kept for gradients */
+  --focus: #2d2a4a;         /* 11.6:1 on --bg */
 
   /* status */
-  --green: #17784c;         /* white on it 5.5:1 */
-  --green-ink: #14683f;
-  --green-soft: #d6efe2;
-  --amber: #b57a10;
+  --green: #1f7a50;         /* white on it 5.3:1 */
+  --green-ink: #17603f;
+  --green-soft: #e3f4ec;
+  --amber: #b7791f;
   --amber-ink: #7a4f00;
-  --amber-soft: #fbe6bf;
-  --red: #a8203a;           /* white on it 7.2:1; on --bg 5.9:1 */
-  --red-soft: #f8dbe1;
-  --gold: #a57400;
-  --gold-soft: #f2c14e;     /* ink on it 9.6:1 */
+  --amber-soft: #fdf1dc;
+  --red: #a51931;           /* white on it 7.6:1; on --bg 6.4:1 */
+  --red-soft: #fbe6ea;
+  --gold: #c99a2e;
+  --gold-soft: #f2c14e;     /* ink on it 9.9:1 */
 
-  /* legacy names kept for any inline style that still reads them */
-  --navy: var(--ink);
-  --navy-soft: var(--accent-soft);
-  --cream: var(--bg);
-  --card: var(--surface);
+  /* original names */
+  --navy: #2d2a4a;
+  --navy-soft: #e8e7f2;
+  --cream: #fff8f0;
+  --card: #ffffff;
 
   /* shape + depth */
   --radius: 18px;
@@ -74,10 +74,10 @@ a { color: var(--accent); }
 .wrap { max-width: 560px; margin: 0 auto; padding: 16px; }
 .wrap.wide { max-width: 980px; }
 
-/* Brand accent bar (was the Thai flag). */
+/* Thai flag stripes: red / white / navy / white / red. */
 .flag {
-  height: 6px;
-  background: linear-gradient(90deg, var(--accent), var(--pink) 55%, var(--gold-soft));
+  height: 8px;
+  background: linear-gradient(var(--red) 0 16%, #fff 16% 33%, var(--navy) 33% 67%, #fff 67% 84%, var(--red) 84%);
 }
 
 h1, h2, h3 { margin: 0; line-height: 1.15; }
@@ -100,14 +100,14 @@ h1 { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
   background: var(--surface); color: var(--accent);
   box-shadow: var(--raise-sm), inset 0 0 0 1.5px var(--edge);
 }
-.btn.secondary:hover { background: #f3f1f9; }
+.btn.secondary:hover { background: #fbf4ea; }
 .btn.secondary:active { box-shadow: var(--inset), inset 0 0 0 1.5px var(--edge); }
 .btn.small { width: auto; min-height: 40px; padding: 8px 16px; font-size: 14px; }
 .btn.ghost {
   background: transparent; color: var(--muted); box-shadow: none;
   text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px;
 }
-.btn.ghost:hover { background: rgba(90, 47, 224, .08); color: var(--ink); }
+.btn.ghost:hover { background: rgba(165, 25, 49, .08); color: var(--ink); }
 .btn.ghost:active { box-shadow: var(--inset-sm); }
 .btn.green { background: var(--green); color: #fff; }
 .btn.green:hover { background: var(--green-ink); }
@@ -121,7 +121,7 @@ h1 { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
   border: 1.5px solid var(--edge); background: var(--surface); font-size: 16px;
   box-shadow: var(--inset);
 }
-.input::placeholder { color: #6e6a88; }
+.input::placeholder { color: var(--muted); }
 .input:focus { border-color: var(--accent); }
 
 .error {
@@ -277,7 +277,7 @@ h1 { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
   margin: 0; background: var(--surface); border-radius: var(--radius); overflow: hidden;
   box-shadow: var(--raise); border: 1.5px solid transparent;
 }
-.photo img, .photo video { display: block; width: 100%; max-height: 70vh; object-fit: cover; background: #d9d5e6; }
+.photo img, .photo video { display: block; width: 100%; max-height: 70vh; object-fit: cover; background: #e4d8c6; }
 .photo .cap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 12px; }
 .photo .cap strong { font-size: 15px; }
 .photo .cap > span:not(.vscore) { color: var(--muted); font-size: 13px; flex: 1; min-width: 0; }
@@ -297,14 +297,14 @@ h1 { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
 
 /* ---------- bottom sheet ---------- */
 .sheet-bg {
-  position: fixed; inset: 0; background: rgba(33, 30, 54, .5); z-index: 20;
+  position: fixed; inset: 0; background: rgba(30, 28, 51, .5); z-index: 20;
   display: flex; align-items: flex-end; justify-content: center;
 }
 .sheet-bg[hidden] { display: none; }
 .sheet {
   background: var(--bg); width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
   border-radius: 26px 26px 0 0; padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
-  box-shadow: 0 -8px 30px rgba(33, 30, 54, .25);
+  box-shadow: 0 -8px 30px rgba(30, 28, 51, .25);
 }
 .sheet h2 { font-size: 20px; padding-right: 48px; }
 .sheet .close {
@@ -330,7 +330,7 @@ h1 { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
 
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30;
-  background: #2a2645; color: #fff; padding: 12px 18px; border-radius: 999px;
+  background: var(--navy); color: #fff; padding: 12px 18px; border-radius: 999px;
   font-weight: 600; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); max-width: calc(100% - 32px);
 }
 .toast[hidden] { display: none; }
