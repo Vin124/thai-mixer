@@ -15,6 +15,14 @@
 
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
+    {% if not pending %}
+    {% if sign_in %}
+    <a class="btn" href="{{ url_for('login_google') }}">Continue with Google</a>
+    <p class="sub">Sign in once and you can get back to your points from any phone.</p>
+    {% elif not error %}
+    <div class="error">Sign-in isn't set up on this server yet.</div>
+    {% endif %}
+    {% else %}
     <form method="post" action="{{ url_for('join') }}">
       <label class="field">
         <span>Your name</span>
@@ -32,6 +40,7 @@
       </div>
       <button class="btn" type="submit">Let's go →</button>
     </form>
+    {% endif %}
   </main>
 </body>
 </html>

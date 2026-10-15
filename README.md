@@ -37,7 +37,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-To use `/admin`, first create a `.env` file containing `ADMIN_PASSWORD=pick-something`. Then open http://localhost:5050. With no other settings it uses a local SQLite file (`mixer.db`) and an `uploads/` folder. To try it on your phone, use your computer's local IP (printed at startup) on the same Wi-Fi.
+Players and admins sign in with Google through Supabase Auth, so even locally you need `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` in a `.env` file (see below), plus `ADMIN_EMAILS=you@gmail.com` for `/admin`. Then open http://localhost:5050. With no other settings it uses a local SQLite file (`mixer.db`) and an `uploads/` folder. To try it on your phone, use your computer's local IP (printed at startup) on the same Wi-Fi.
 
 ## Host it for the event
 
@@ -47,7 +47,8 @@ Most hosts wipe the server's disk on redeploy, so for the real event, store data
 2. Set these environment variables on your host (see `.env.example`):
    - `DATABASE_URL`: Project Settings → Database → Connection string → **Session pooler**
    - `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` (the **service_role** key, which is secret and only goes on the server): Project Settings → API
-   - `ADMIN_PASSWORD`: admin stays off until this is set
+   - `ADMIN_EMAILS`: comma-separated Google accounts allowed into `/admin`; admin stays off until this is set
+   - In Supabase: Authentication → Sign In / Providers → **Google** on (with a Google Cloud OAuth client whose redirect URI is `https://<project-ref>.supabase.co/auth/v1/callback`), and Authentication → URL Configuration → add `https://<your-site>/auth/callback` to the redirect URLs
    - `FLASK_SECRET_KEY`: any long random string (`python -c "import secrets; print(secrets.token_hex(32))"`)
 3. Deploy to any Python host. On first start the app creates its tables (with row-level security on) and a public `mixer-media` storage bucket by itself.
    - **Render**: New Web Service from this repo. Build `pip install -r requirements.txt`, start `gunicorn app:app --preload --workers 2 --threads 4 --timeout 120`.

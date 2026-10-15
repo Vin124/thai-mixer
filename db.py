@@ -72,6 +72,13 @@ def init_db():
             role TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         )""")
+    # The Supabase Auth (Google) user behind a player. NULL for players who
+    # joined by name before Google sign-in existed.
+    if USE_PG:
+        query("ALTER TABLE mixer_players ADD COLUMN IF NOT EXISTS auth_user_id TEXT")
+    elif "auth_user_id" not in {c["name"] for c in query("PRAGMA table_info(mixer_players)")}:
+        query("ALTER TABLE mixer_players ADD COLUMN auth_user_id TEXT")
+    query("CREATE UNIQUE INDEX IF NOT EXISTS mixer_players_auth_user ON mixer_players (auth_user_id)")
     # status: 'done' (no media, counts straight away), 'pending',
     # 'approved', 'rejected'. Points count for everything except rejected;
     # only approved media shows on the projector.

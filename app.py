@@ -7,7 +7,7 @@ Pages:
   /         join (or straight to /play if already joined)
   /play     the player's phone view (incl. photo voting + winner)
   /screen   projector: live photo/video feed + leaderboard
-  /admin    review queue (password: ADMIN_PASSWORD)
+  /admin    review queue (Google sign-in, emails listed in ADMIN_EMAILS)
   /qr       printable QR code that points at this site
 """
 
@@ -24,6 +24,7 @@ from flask import (Flask, abort, g, jsonify, redirect, render_template, request,
                    send_from_directory, session, url_for)
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import auth
 import game
 import db
 import storage
@@ -66,7 +67,8 @@ app.config.update(
     SESSION_COOKIE_SECURE=(os.environ.get("COOKIE_SECURE") or ("1" if db.USE_PG else "0")) == "1",
 )
 
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+# Google accounts allowed into /admin, comma-separated.
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
 
 ROLES = {"phi": "พี่", "nong": "น้อง"}
 ROLE_HINTS = {"phi": "upperclassman", "nong": "new member"}
@@ -136,15 +138,86 @@ def leaderboard(limit=None):
 
 # ---------- player pages ----------
 
+def render_join(error=None, status=200, name=None, role=None):
+    """The join page: a Google button, or, once signed in for the first
+    time, the name + พี่/น้อง form."""
+    pending = session.get("google")
+    if name is None and pending:
+        name = pending["name"]
+    return render_template("join.html", event=cfg().EVENT_NAME, roles=ROLES, hints=ROLE_HINTS,
+                           error=error, pending=pending, sign_in=auth.ENABLED,
+                           name=name, role=role), status
+
+
+def admin_login_page(error=None, status=200):
+    return render_template("admin_login.html", error=error,
+                           configured=bool(ADMIN_EMAILS and auth.ENABLED)), status
+
+
 @app.route("/")
 def join_page():
     if current_player():
         return redirect(url_for("play"))
-    return render_template("join.html", event=cfg().EVENT_NAME, roles=ROLES, hints=ROLE_HINTS, error=None)
+    return render_join()
+
+
+@app.route("/login/google")
+def login_google():
+    """Start Google sign-in. ?for=admin signs in to /admin instead of the game."""
+    target = "admin" if request.args.get("for") == "admin" else "play"
+    if not auth.ENABLED:
+        msg = "Google sign-in isn't set up on this server."
+        return admin_login_page(msg, 503) if target == "admin" else render_join(msg, 503)
+    verifier = auth.new_verifier()
+    session["oauth"] = {"verifier": verifier, "for": target}
+    return redirect(auth.authorize_url(url_for("auth_callback", _external=True), verifier))
+
+
+@app.route("/auth/callback")
+def auth_callback():
+    """Google -> Supabase -> here with ?code=. Admins go to /admin, known
+    players straight to /play, first-timers to the join form."""
+    flow = session.pop("oauth", None)
+    target = flow["for"] if flow else "play"
+
+    def failed(msg):
+        return admin_login_page(msg, 400) if target == "admin" else render_join(msg, 400)
+
+    code = request.args.get("code")
+    if not flow or not code:
+        return failed(request.args.get("error_description") or "Sign-in didn't finish — try again.")
+    try:
+        user = auth.exchange(code, flow["verifier"])
+    except auth.AuthError as e:
+        return failed(str(e))
+
+    if target == "admin":
+        if user["email"] not in ADMIN_EMAILS:
+            return failed(f"{user['email']} isn't on the admin list.")
+        session["admin"] = True
+        return redirect(url_for("admin"))
+
+    session.permanent = True
+    player = db.query("SELECT id FROM mixer_players WHERE auth_user_id = ?", (user["id"],), one=True)
+    if player:
+        session.pop("google", None)
+        session["player_id"] = player["id"]
+        return redirect(url_for("play"))
+    session["google"] = {"id": user["id"], "name": user["name"]}
+    return redirect(url_for("join_page"))
 
 
 @app.post("/join")
 def join():
+    pending = session.get("google")
+    if not pending:
+        return redirect(url_for("join_page"))
+    # Signed in twice in two tabs: the first one already made the player.
+    player = db.query("SELECT id FROM mixer_players WHERE auth_user_id = ?", (pending["id"],), one=True)
+    if player:
+        session.pop("google")
+        session["player_id"] = player["id"]
+        return redirect(url_for("play"))
     name = " ".join(request.form.get("name", "").split())[:40]
     role = request.form.get("role", "")
     if not name:
@@ -156,12 +229,13 @@ def join():
     else:
         error = None
     if error:
-        return render_template("join.html", event=cfg().EVENT_NAME, roles=ROLES, hints=ROLE_HINTS,
-                               error=error, name=name, role=role), 400
+        return render_join(error, 400, name=name, role=role)
 
     pid = str(uuid.uuid4())
-    db.query("INSERT INTO mixer_players (id, name, name_key, role, created_at) VALUES (?, ?, ?, ?, ?)",
-             (pid, name, name.lower(), role, now()))
+    db.query("""INSERT INTO mixer_players (id, name, name_key, role, created_at, auth_user_id)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+             (pid, name, name.lower(), role, now(), pending["id"]))
+    session.pop("google")
     session.permanent = True
     session["player_id"] = pid
     return redirect(url_for("play"))
@@ -431,17 +505,10 @@ def media(key):
 
 # ---------- admin ----------
 
-@app.route("/admin", methods=["GET", "POST"])
+@app.route("/admin")
 def admin():
-    if request.method == "POST":
-        if ADMIN_PASSWORD and secrets.compare_digest(
-                request.form.get("password", "").encode(), ADMIN_PASSWORD.encode()):
-            session["admin"] = True
-            return redirect(url_for("admin"))
-        return render_template("admin_login.html", error="Wrong password.",
-                               configured=bool(ADMIN_PASSWORD)), 401
     if not is_admin():
-        return render_template("admin_login.html", error=None, configured=bool(ADMIN_PASSWORD))
+        return admin_login_page()
 
     def rows(status, limit):
         subs = db.query(f"""

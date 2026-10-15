@@ -55,7 +55,11 @@
     </section>
 
     <form class="foot" method="post" action="{{ url_for('leave') }}"
-          onsubmit="return confirm('Leave this device? Your points stay, but you can\'t log back in as yourself.')">
+          {% if player.auth_user_id %}
+          onsubmit="return confirm('Sign out? Your points stay — sign back in with Google any time.')"
+          {% else %}
+          onsubmit="return confirm('Leave this device? Your points stay, but you can\'t log back in as yourself.')"
+          {% endif %}>
       <button class="btn ghost small" type="submit">Not {{ player.name }}?</button>
     </form>
   </main>
