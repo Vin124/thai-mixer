@@ -53,7 +53,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script>
-    const playUrl = location.origin + "/";
+    const playUrl = {{ join_url | tojson }};
     document.getElementById("url").textContent = playUrl.replace(/^https?:\/\//, "");
     new QRCode(document.getElementById("qr"), { text: playUrl, width: 232, height: 232, correctLevel: QRCode.CorrectLevel.M });
 
@@ -67,7 +67,7 @@
 
     async function tick() {
       let data;
-      try { data = await (await fetch("/api/screen")).json(); } catch (_) { return; }
+      try { data = await (await fetch({{ url_for("game_api_screen") | tojson }})).json(); } catch (_) { return; }
 
       const feed = document.getElementById("feed");
       if (data.feed.length) {

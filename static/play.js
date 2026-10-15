@@ -2,6 +2,7 @@
 // submit sheet (with photo compression + video length check) and leaderboard.
 
 const G = window.GAME;
+const BASE = window.BASE; // this game's URL, e.g. /g/ABCDEF
 const $ = (id) => document.getElementById(id);
 let subs = {};
 let current = null;   // activity open in the sheet
@@ -71,8 +72,8 @@ function renderCards(containerId, items) {
 
 async function refresh() {
   try {
-    const r = await fetch("/api/me");
-    if (r.status === 401) return (location.href = "/");
+    const r = await fetch(BASE + "/api/me");
+    if (r.status === 401) return (location.href = BASE);
     const me = await r.json();
     Object.assign(G, me.game); // picks up activity edits made in /admin/content
     subs = me.submissions;
@@ -87,7 +88,7 @@ async function refresh() {
 }
 
 async function loadBoard() {
-  const r = await fetch("/api/screen");
+  const r = await fetch(BASE + "/api/screen");
   const { leaderboard } = await r.json();
   const ol = $("board");
   ol.replaceChildren();
@@ -144,7 +145,7 @@ async function vote(p, value, bar) {
   p.score += value - p.myVote;
   p.myVote = value;
   bar.replaceWith(voteBar(p));
-  const r = await send("POST", "/api/vote", form({ submission_id: p.id, value }));
+  const r = await send("POST", BASE + "/api/vote", form({ submission_id: p.id, value }));
   if (r.status !== 200) {
     Object.assign(p, before);
     loadPhotos();
@@ -153,8 +154,8 @@ async function vote(p, value, bar) {
 }
 
 async function loadPhotos() {
-  const r = await fetch("/api/photos");
-  if (r.status === 401) return (location.href = "/");
+  const r = await fetch(BASE + "/api/photos");
+  if (r.status === 401) return (location.href = BASE);
   const { photos } = await r.json();
   const box = $("photos");
   box.replaceChildren();
@@ -168,8 +169,8 @@ async function loadPhotos() {
 }
 
 async function loadWinner() {
-  const r = await fetch("/api/photos?order=top");
-  if (r.status === 401) return (location.href = "/");
+  const r = await fetch(BASE + "/api/photos?order=top");
+  if (r.status === 401) return (location.href = BASE);
   const { photos } = await r.json();
   const top = $("winner");
   const ol = $("runners-up");
@@ -350,7 +351,7 @@ $("sheet-form").addEventListener("submit", async (e) => {
   if (chosen && G.directUpload) {
     // Straight to Supabase: the app's host can't take big files.
     const type = chosen.blob.type;
-    const r = await send("POST", "/api/upload-url",
+    const r = await send("POST", BASE + "/api/upload-url",
       form({ activity_id: a.id, content_type: type, size: chosen.blob.size }));
     if (r.status !== 200) return retry(r.body.error);
     const up = await send("PUT", r.body.url, chosen.blob, { contentType: type, onProgress: progress });
@@ -360,7 +361,7 @@ $("sheet-form").addEventListener("submit", async (e) => {
     fd.append("media", chosen.blob, chosen.name);
   }
 
-  const r = await send("POST", "/api/submit", fd, { onProgress: G.directUpload ? null : progress });
+  const r = await send("POST", BASE + "/api/submit", fd, { onProgress: G.directUpload ? null : progress });
   if (r.status !== 200) return retry(r.body.error);
   closeSheet();
   toast(r.body.status === "approved" ? "Sent! Points added — it's on the big screen." : "Nice! Points added.");
@@ -371,7 +372,7 @@ $("undo").addEventListener("click", async () => {
   if (!confirm("Remove this submission and its points?")) return;
   const fd = new FormData();
   fd.append("activity_id", current.id);
-  await fetch("/api/undo", { method: "POST", body: fd });
+  await fetch(BASE + "/api/undo", { method: "POST", body: fd });
   closeSheet();
   refresh();
 });

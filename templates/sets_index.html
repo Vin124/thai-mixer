@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>Your sets · Mixer</title>
+</head>
+<body>
+  <div class="flag"></div>
+  <main class="wrap wide">
+    <p><a href="{{ url_for('home') }}">← Mixer home</a></p>
+    <h1>Sets</h1>
+    <div class="packs">
+      {% for p in library %}
+      <a class="pack" href="{{ url_for('new_game', pack=p.id) }}">
+        <span class="pack-emoji" aria-hidden="true">{{ p.emoji }}</span>
+        <h3>{{ p.title }}</h3>
+        <p>{{ p.description }}</p>
+      </a>
+      {% endfor %}
+    </div>
+  </main>
+</body>
+</html>

@@ -1,14 +1,22 @@
 """
-app.py — the mixer web app. Guests scan the QR, type a name, and play:
-bingo (find someone who…), team-up challenges and performances, with
-photo/video proof. Admins approve media before it hits the projector.
+app.py — Mixer, the house-party game. Sign in with Google, create a game
+from a pack (or your own set), share the QR / code, and guests play: bingo
+(find someone who…), team-up challenges and performances with photo/video
+proof, then vote on each other's photos for a winner.
 
 Pages:
-  /         join (or straight to /play if already joined)
-  /play     the player's phone view (incl. photo voting + winner)
-  /screen   projector: live photo/video feed + leaderboard
-  /admin    review queue (Google sign-in, emails listed in ADMIN_EMAILS)
-  /qr       printable QR code that points at this site
+  /                 homepage: create a game, join one by code, your games
+  /new              create a game (pick a pack or set)
+  /join?code=       join by code
+  /sets             make and manage your own sets (sets_views.py)
+  /g/<code>         a game's join page (what its QR points at)
+  /g/<code>/play    the player's phone view
+  /g/<code>/screen  projector: live photo/video feed + leaderboard
+  /g/<code>/admin   host controls (the host, or anyone in ADMIN_EMAILS)
+  /g/<code>/qr      printable QR code for this game
+
+Every /g/<code>/... route runs with that game loaded (see load_game), and
+everything it reads or changes is limited to that game's players.
 """
 
 import json
@@ -27,6 +35,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import auth
 import game
 import db
+import presets
+import sets
 import storage
 
 MAX_UPLOAD_MB = 50  # Supabase's free tier caps each file at 50 MB
@@ -36,7 +46,7 @@ MAX_VIDEO_SECONDS = 30
 def _secret_key():
     """FLASK_SECRET_KEY if set, else a random key saved next to the app so
     logins survive restarts. Never a fixed default: anyone who knew it could
-    forge an admin login."""
+    forge a login."""
     if os.environ.get("FLASK_SECRET_KEY"):
         return os.environ["FLASK_SECRET_KEY"]
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".secret_key")
@@ -57,52 +67,113 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.secret_key = _secret_key()
 app.config.update(
     MAX_CONTENT_LENGTH=MAX_UPLOAD_MB * 1024 * 1024,
-    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
     # Only send the cookie when the session changes. Otherwise a player-page
-    # poll that was in flight during an admin login answers with the old
-    # cookie and logs the admin straight back out.
+    # poll that was in flight during a sign-in answers with the old cookie
+    # and signs the person straight back out.
     SESSION_REFRESH_EACH_REQUEST=False,
     SESSION_COOKIE_SAMESITE="Lax",
     # https-only cookies once hosted; plain http is fine on your own computer.
     SESSION_COOKIE_SECURE=(os.environ.get("COOKIE_SECURE") or ("1" if db.USE_PG else "0")) == "1",
 )
 
-# Google accounts allowed into /admin, comma-separated.
+# Google accounts that can run every game (including the original Thai Club
+# one, which has no host), comma-separated.
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
 
-ROLES = {"phi": "พี่", "nong": "น้อง"}
-ROLE_HINTS = {"phi": "upperclassman", "nong": "new member"}
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"}
 VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/webm"}
 EXTENSIONS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
               "image/heic": "heic", "image/heif": "heif", "video/mp4": "mp4",
               "video/quicktime": "mov", "video/webm": "webm"}
 
-db.init_db()
-storage.init_storage(MAX_UPLOAD_MB * 1024 * 1024, EXTENSIONS)
-
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+db.init_db()
+game.ensure_legacy(now())
+storage.init_storage(MAX_UPLOAD_MB * 1024 * 1024, EXTENSIONS)
+
+
+# ---------- who's asking ----------
+
+def current_user():
+    """The signed-in Google user's row, or None."""
+    if "user" not in g:
+        uid = session.get("user_id")
+        g.user = db.query("SELECT * FROM mixer_users WHERE id = ?", (uid,), one=True) if uid else None
+    return g.user
+
+
+def is_superadmin():
+    user = current_user()
+    return bool(user and user["email"].lower() in ADMIN_EMAILS)
+
+
+def is_host():
+    """May the current user run the loaded game?"""
+    user = current_user()
+    return bool(user and (g.game_row["host_id"] == user["id"] or is_superadmin()))
+
+
 def current_player():
-    pid = session.get("player_id")
-    if not pid:
-        return None
-    return db.query("SELECT * FROM mixer_players WHERE id = ?", (pid,), one=True)
+    """The current person's player in the loaded game, or None. Google users
+    are matched by account; people who joined the original event by name
+    (before sign-in existed) by the player id in their cookie."""
+    if "player" not in g:
+        user, gid = current_user(), g.game_row["id"]
+        if user:
+            g.player = db.query("SELECT * FROM mixer_players WHERE game_id = ? AND user_id = ?",
+                                (gid, user["id"]), one=True)
+        else:
+            g.player = None
+        if not g.player and session.get("player_id"):
+            g.player = db.query("""SELECT * FROM mixer_players
+                                   WHERE id = ? AND game_id = ? AND user_id IS NULL""",
+                                (session["player_id"], gid), one=True)
+    return g.player
 
 
-def is_admin():
-    return session.get("admin") is True
+def safe_next(target):
+    """Only same-site paths, so a crafted link can't bounce people elsewhere."""
+    target = target or "/"
+    if not target.startswith("/") or target.startswith("//") or "\\" in target:
+        return "/"
+    return target
+
+
+# ---------- game loading ----------
+# Every endpoint named game_* lives under /g/<code>/. The code is taken off
+# the URL and the game loaded before the view runs, and url_for() inside a
+# game fills the code back in, so templates write url_for('game_play').
+
+@app.url_value_preprocessor
+def load_game(endpoint, values):
+    if endpoint and endpoint.startswith("game_") and values is not None and "code" in values:
+        row = game.by_code(values.pop("code"))
+        if not row:
+            abort(404)
+        g.game_row, g.code = row, row["code"]
+
+
+@app.url_defaults
+def add_game_code(endpoint, values):
+    if endpoint.startswith("game_") and "code" not in values and "code" in g:
+        values["code"] = g.code
 
 
 def cfg():
-    """The current activities (admin edits or content.py defaults), loaded
-    once per request."""
+    """The loaded game's activities."""
     if "game" not in g:
-        g.game = game.current()
+        g.game = game.build(g.game_row["pack"])
     return g.game
+
+
+def require_host():
+    if not is_host():
+        abort(403)
 
 
 # ---------- scoring ----------
@@ -122,152 +193,213 @@ def score(done_ids):
 
 
 def leaderboard(limit=None):
-    players = db.query("SELECT id, name, role FROM mixer_players")
-    rows = db.query("SELECT player_id, activity_id FROM mixer_submissions WHERE status <> 'rejected'")
+    gid = g.game_row["id"]
+    players = db.query("SELECT id, name, role FROM mixer_players WHERE game_id = ?", (gid,))
+    rows = db.query("""SELECT s.player_id, s.activity_id FROM mixer_submissions s
+                       JOIN mixer_players p ON p.id = s.player_id
+                       WHERE p.game_id = ? AND s.status <> 'rejected'""", (gid,))
     done = {}
     for r in rows:
         done.setdefault(r["player_id"], set()).add(r["activity_id"])
     board = []
     for p in players:
         pts, lines = score(done.get(p["id"], set()))
-        board.append({"name": p["name"], "role": ROLES.get(p["role"], ""),
+        board.append({"name": p["name"], "role": cfg().ROLES.get(p["role"], ""),
                       "points": pts, "lines": lines, "id": p["id"]})
     board.sort(key=lambda b: (-b["points"], b["name"].lower()))
     return board[:limit] if limit else board
 
 
-# ---------- player pages ----------
-
-def render_join(error=None, status=200, name=None, role=None):
-    """The join page: a Google button, or, once signed in for the first
-    time, the name + พี่/น้อง form."""
-    pending = session.get("google")
-    if name is None and pending:
-        name = pending["name"]
-    return render_template("join.html", event=cfg().EVENT_NAME, roles=ROLES, hints=ROLE_HINTS,
-                           error=error, pending=pending, sign_in=auth.ENABLED,
-                           name=name, role=role), status
+def game_submission(sub_id):
+    """A submission by id, only if it belongs to a player in the loaded game."""
+    return db.query("""SELECT s.* FROM mixer_submissions s JOIN mixer_players p ON p.id = s.player_id
+                       WHERE s.id = ? AND p.game_id = ?""", (sub_id, g.game_row["id"]), one=True)
 
 
-def admin_login_page(error=None, status=200):
-    return render_template("admin_login.html", error=error,
-                           configured=bool(ADMIN_EMAILS and auth.ENABLED)), status
+def game_player(player_id):
+    return db.query("SELECT * FROM mixer_players WHERE id = ? AND game_id = ?",
+                    (player_id, g.game_row["id"]), one=True)
 
 
-@app.route("/")
-def join_page():
-    if current_player():
-        return redirect(url_for("play"))
-    return render_join()
-
+# ---------- sign in ----------
 
 @app.route("/login/google")
 def login_google():
-    """Start Google sign-in. ?for=admin signs in to /admin instead of the game."""
-    target = "admin" if request.args.get("for") == "admin" else "play"
+    """Start Google sign-in; ?next= is where to land afterwards."""
+    nxt = safe_next(request.args.get("next"))
     if not auth.ENABLED:
-        msg = "Google sign-in isn't set up on this server."
-        return admin_login_page(msg, 503) if target == "admin" else render_join(msg, 503)
+        return home_page(error="Google sign-in isn't set up on this server.", status=503)
     verifier = auth.new_verifier()
-    session["oauth"] = {"verifier": verifier, "for": target}
+    session["oauth"] = {"verifier": verifier, "next": nxt}
     return redirect(auth.authorize_url(url_for("auth_callback", _external=True), verifier))
 
 
 @app.route("/auth/callback")
 def auth_callback():
-    """Google -> Supabase -> here with ?code=. Admins go to /admin, known
-    players straight to /play, first-timers to the join form."""
+    """Google -> Supabase -> here with ?code=. Remember the account, then go
+    where the person was heading."""
     flow = session.pop("oauth", None)
-    target = flow["for"] if flow else "play"
-
-    def failed(msg):
-        return admin_login_page(msg, 400) if target == "admin" else render_join(msg, 400)
-
     code = request.args.get("code")
     if not flow or not code:
-        return failed(request.args.get("error_description") or "Sign-in didn't finish — try again.")
+        return home_page(error=request.args.get("error_description")
+                         or "Sign-in didn't finish — try again.", status=400)
     try:
         user = auth.exchange(code, flow["verifier"])
     except auth.AuthError as e:
-        return failed(str(e))
-
-    if target == "admin":
-        if user["email"] not in ADMIN_EMAILS:
-            return failed(f"{user['email']} isn't on the admin list.")
-        session["admin"] = True
-        return redirect(url_for("admin"))
-
-    session.permanent = True
-    player = db.query("SELECT id FROM mixer_players WHERE auth_user_id = ?", (user["id"],), one=True)
-    if player:
-        session.pop("google", None)
-        session["player_id"] = player["id"]
-        return redirect(url_for("play"))
-    session["google"] = {"id": user["id"], "name": user["name"]}
-    return redirect(url_for("join_page"))
-
-
-@app.post("/join")
-def join():
-    pending = session.get("google")
-    if not pending:
-        return redirect(url_for("join_page"))
-    # Signed in twice in two tabs: the first one already made the player.
-    player = db.query("SELECT id FROM mixer_players WHERE auth_user_id = ?", (pending["id"],), one=True)
-    if player:
-        session.pop("google")
-        session["player_id"] = player["id"]
-        return redirect(url_for("play"))
-    name = " ".join(request.form.get("name", "").split())[:40]
-    role = request.form.get("role", "")
-    if not name:
-        error = "Type your name so people can find you."
-    elif role not in ROLES:
-        error = "Pick one: พี่ or น้อง."
-    elif db.query("SELECT 1 FROM mixer_players WHERE name_key = ?", (name.lower(),), one=True):
-        error = f"Someone already joined as “{name}”. Add your last initial or nickname."
+        return home_page(error=str(e), status=400)
+    if db.query("SELECT 1 FROM mixer_users WHERE id = ?", (user["id"],), one=True):
+        db.query("UPDATE mixer_users SET email = ? WHERE id = ?", (user["email"], user["id"]))
     else:
-        error = None
-    if error:
-        return render_join(error, 400, name=name, role=role)
-
-    pid = str(uuid.uuid4())
-    db.query("""INSERT INTO mixer_players (id, name, name_key, role, created_at, auth_user_id)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-             (pid, name, name.lower(), role, now(), pending["id"]))
-    session.pop("google")
+        db.query("INSERT INTO mixer_users (id, email, name, created_at) VALUES (?, ?, ?, ?)",
+                 (user["id"], user["email"], user["name"], now()))
     session.permanent = True
-    session["player_id"] = pid
-    return redirect(url_for("play"))
+    session["user_id"] = user["id"]
+    return redirect(safe_next(flow["next"]))
 
 
-@app.post("/leave")
-def leave():
+@app.post("/logout")
+def logout():
+    session.pop("user_id", None)
     session.pop("player_id", None)
-    return redirect(url_for("join_page"))
+    return redirect(url_for("home"))
 
 
+def login_redirect():
+    return redirect(url_for("login_google", next=request.full_path.rstrip("?")))
+
+
+# ---------- homepage, create, join ----------
+
+def home_page(error=None, status=200):
+    user = current_user()
+    games = [{"code": r["code"], "title": r["title"], "is_host": bool(r["is_host"]),
+              "players": int(r["players"])} for r in game.for_user(user["id"])] if user else []
+    return render_template(
+        "home.html", user={"name": user["name"], "email": user["email"]} if user else None,
+        games=games, sign_in=auth.ENABLED, error=error,
+        packs=[{k: p[k] for k in ("id", "title", "emoji", "description")} for p in presets.PACKS]
+    ), status
+
+
+@app.route("/")
+def home():
+    return home_page()
+
+
+@app.route("/join")
+def join_code():
+    row = game.by_code(request.args.get("code"))
+    if not row:
+        return home_page(error="No game with that code — check the letters and try again.",
+                         status=404)
+    return redirect(url_for("game_join", code=row["code"]))
+
+
+@app.route("/new", methods=["GET", "POST"])
+def new_game():
+    user = current_user()
+    if not user:
+        return login_redirect()
+    library = sets.library(user["id"])
+    chosen = request.values.get("pack") or presets.PACKS[0]["id"]
+    error = None
+    if request.method == "POST":
+        found = sets.load(chosen, user["id"])
+        title = " ".join(request.form.get("title", "").split())[:60]
+        if not found:
+            error = "Pick a pack to play."
+        else:
+            set_title, pack = found
+            pack["event_name"] = title or pack["event_name"]
+            try:
+                row = game.create(pack["event_name"], user["id"], pack, chosen, now())
+            except ValueError as e:  # a custom set saved before a rule changed
+                error = str(e)
+            else:
+                return redirect(url_for("game_admin", code=row["code"]))
+    return render_template("new_game.html", library=library, chosen=chosen, error=error,
+                           title=request.form.get("title", "")), (400 if error else 200)
+
+
+@app.route("/g/<code>", methods=["GET", "POST"], endpoint="game_join")
+def game_join():
+    """Where the QR lands: sign in, pick a name (and role, if the pack has
+    roles), and you're in."""
+    if current_player():
+        return redirect(url_for("game_play"))
+    user = current_user()
+    error, name, role = None, user["name"] if user else "", None
+    if request.method == "POST" and user:
+        name = " ".join(request.form.get("name", "").split())[:40]
+        role = request.form.get("role", "")
+        if not name:
+            error = "Type your name so people can find you."
+        elif cfg().ROLES and role not in cfg().ROLES:
+            error = "Pick one of the options."
+        elif db.query("SELECT 1 FROM mixer_players WHERE game_id = ? AND name_key = ?",
+                      (g.game_row["id"], name.lower()), one=True):
+            error = f"Someone in this game is already “{name}”. Add your last initial or a nickname."
+        else:
+            try:
+                db.query("""INSERT INTO mixer_players (id, game_id, user_id, name, name_key, role,
+                                                       created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                         (str(uuid.uuid4()), g.game_row["id"], user["id"], name, name.lower(),
+                          role if cfg().ROLES else "", now()))
+            except db.IntegrityError:
+                # A unique index said no: either a double-tapped Join (the
+                # first request already made the player) or the name was
+                # taken a moment ago.
+                pass
+            g.pop("player", None)
+            if current_player():
+                return redirect(url_for("game_play"))
+            error = f"Someone just joined as “{name}”. Add your last initial or a nickname."
+    return render_template("join.html", event=cfg().EVENT_NAME, roles=cfg().ROLES,
+                           hints=cfg().ROLE_HINTS, user=user, sign_in=auth.ENABLED, error=error,
+                           name=name, role=role, code=g.code), (400 if error else 200)
+
+
+@app.post("/g/<code>/leave", endpoint="game_leave")
+def game_leave():
+    session.pop("player_id", None)
+    return redirect(url_for("home"))
+
+
+# Links and QR codes printed for the original single-event site.
 @app.route("/play")
+@app.route("/screen")
+@app.route("/qr")
+@app.route("/admin")
+def legacy_redirect():
+    page = request.path.strip("/")
+    target = {"play": "game_play", "screen": "game_screen", "qr": "game_qr",
+              "admin": "game_admin"}[page]
+    return redirect(url_for(target, code=game.LEGACY_CODE))
+
+
+# ---------- player pages ----------
+
+@app.route("/g/<code>/play", endpoint="game_play")
 def play():
     player = current_player()
     if not player:
-        return redirect(url_for("join_page"))
+        return redirect(url_for("game_join"))
     return render_template(
         "play.html", event=cfg().EVENT_NAME, player=player,
-        role_label=ROLES.get(player["role"], ""),
-        game=game_payload())
+        role_label=cfg().ROLES.get(player["role"], ""), game=game_payload(), is_host=is_host())
 
 
 def game_payload():
     """Activities as the phone page needs them (re-sent with every /api/me
-    poll so admin edits show up without a reload)."""
+    poll so host edits show up without a reload)."""
     return {"event": cfg().EVENT_NAME, "bingo": cfg().BINGO, "challenges": cfg().CHALLENGES,
             "performances": cfg().PERFORMANCES, "lineBonus": cfg().BINGO_LINE_BONUS,
             "maxUploadMb": MAX_UPLOAD_MB, "maxVideoSeconds": MAX_VIDEO_SECONDS,
             "directUpload": storage.USE_SUPABASE}
 
 
-@app.route("/api/me")
+@app.route("/g/<code>/api/me", endpoint="game_api_me")
 def api_me():
     player = current_player()
     if not player:
@@ -295,7 +427,7 @@ def media_kind(ctype, proof):
     return kind, None
 
 
-@app.post("/api/upload-url")
+@app.post("/g/<code>/api/upload-url", endpoint="game_api_upload_url")
 def api_upload_url():
     """Step 1 of a direct upload: the phone gets a one-time Supabase URL,
     PUTs the file there, then calls /api/submit with the key."""
@@ -318,7 +450,7 @@ def api_upload_url():
     return jsonify(key=key, url=storage.signed_upload_url(key))
 
 
-@app.post("/api/submit")
+@app.post("/g/<code>/api/submit", endpoint="game_api_submit")
 def api_submit():
     player = current_player()
     if not player:
@@ -362,7 +494,7 @@ def api_submit():
         media_key = f"{uuid.uuid4()}.{EXTENSIONS[ctype]}"
         storage.save(media_key, data, ctype)
 
-    # No approval step: media goes straight to the projector. Admins can
+    # No approval step: media goes straight to the projector. Hosts can
     # still hide or reject it from /admin.
     # reviewed_at orders the projector feed, newest first.
     status = "approved" if media_key else "done"
@@ -385,7 +517,7 @@ def api_submit():
     return jsonify(ok=True, status=status)
 
 
-@app.post("/api/undo")
+@app.post("/g/<code>/api/undo", endpoint="game_api_undo")
 def api_undo():
     player = current_player()
     if not player:
@@ -403,8 +535,8 @@ def api_undo():
 # ---------- photo voting ----------
 
 def photo_feed(viewer_id, order):
-    """Every photo/video on the projector with its vote totals and the
-    viewer's own vote. order: 'new' (newest first) or 'top' (best score
+    """Every photo/video on this game's projector with its vote totals and
+    the viewer's own vote. order: 'new' (newest first) or 'top' (best score
     first; ties go to whoever posted first)."""
     order_by = ("score DESC, up DESC, s.reviewed_at ASC" if order == "top"
                 else "s.reviewed_at DESC")
@@ -417,9 +549,9 @@ def photo_feed(viewer_id, order):
         FROM mixer_submissions s
         JOIN mixer_players p ON p.id = s.player_id
         LEFT JOIN mixer_votes v ON v.submission_id = s.id
-        WHERE s.status = 'approved' AND s.media_key IS NOT NULL
+        WHERE p.game_id = ? AND s.status = 'approved' AND s.media_key IS NOT NULL
         GROUP BY s.id, p.id
-        ORDER BY {order_by}""", (viewer_id,))
+        ORDER BY {order_by}""", (viewer_id, g.game_row["id"]))
     return [{"id": r["id"], "name": r["name"], "note": r["note"],
              "title": cfg().ACTIVITIES.get(r["activity_id"], {}).get("title", ""),
              "url": storage.url(r["media_key"]), "type": r["media_type"],
@@ -427,7 +559,7 @@ def photo_feed(viewer_id, order):
              "myVote": r["my_vote"] or 0, "mine": r["player_id"] == viewer_id} for r in rows]
 
 
-@app.route("/api/photos")
+@app.route("/g/<code>/api/photos", endpoint="game_api_photos")
 def api_photos():
     player = current_player()
     if not player:
@@ -436,7 +568,7 @@ def api_photos():
     return jsonify(photos=photo_feed(player["id"], order))
 
 
-@app.post("/api/vote")
+@app.post("/g/<code>/api/vote", endpoint="game_api_vote")
 def api_vote():
     """value 1 = up, -1 = down, 0 = take my vote back."""
     player = current_player()
@@ -445,10 +577,8 @@ def api_vote():
     value = request.form.get("value", type=int)
     if value not in (-1, 0, 1):
         return jsonify(error="Bad vote."), 400
-    sub = db.query("""SELECT id, player_id FROM mixer_submissions
-                      WHERE id = ? AND status = 'approved' AND media_key IS NOT NULL""",
-                   (request.form.get("submission_id", ""),), one=True)
-    if not sub:
+    sub = game_submission(request.form.get("submission_id", ""))
+    if not sub or sub["status"] != "approved" or not sub["media_key"]:
         return jsonify(error="That photo isn't up anymore."), 404
     if sub["player_id"] == player["id"]:
         return jsonify(error="You can't vote on your own photo."), 400
@@ -471,18 +601,19 @@ def too_large(_):
 
 # ---------- projector ----------
 
-@app.route("/screen")
+@app.route("/g/<code>/screen", endpoint="game_screen")
 def screen():
-    return render_template("screen.html", event=cfg().EVENT_NAME)
+    return render_template("screen.html", event=cfg().EVENT_NAME, code=g.code,
+                           join_url=url_for("game_join", _external=True))
 
 
-@app.route("/api/screen")
+@app.route("/g/<code>/api/screen", endpoint="game_api_screen")
 def api_screen():
     feed = db.query("""
         SELECT s.id, s.activity_id, s.note, s.media_key, s.media_type, s.reviewed_at, p.name
         FROM mixer_submissions s JOIN mixer_players p ON p.id = s.player_id
-        WHERE s.status = 'approved' AND s.media_key IS NOT NULL
-        ORDER BY s.reviewed_at DESC LIMIT 24""")
+        WHERE p.game_id = ? AND s.status = 'approved' AND s.media_key IS NOT NULL
+        ORDER BY s.reviewed_at DESC LIMIT 24""", (g.game_row["id"],))
     return jsonify(
         feed=[{"id": f["id"], "name": f["name"], "note": f["note"],
                "title": cfg().ACTIVITIES.get(f["activity_id"], {}).get("title", ""),
@@ -491,9 +622,10 @@ def api_screen():
                      for b in leaderboard(10)])
 
 
-@app.route("/qr")
+@app.route("/g/<code>/qr", endpoint="game_qr")
 def qr():
-    return render_template("qr.html", event=cfg().EVENT_NAME, url=request.host_url)
+    return render_template("qr.html", event=cfg().EVENT_NAME, code=g.code,
+                           url=url_for("game_join", _external=True))
 
 
 @app.route("/media/<path:key>")
@@ -503,20 +635,21 @@ def media(key):
     return send_from_directory(storage.LOCAL_DIR, key)
 
 
-# ---------- admin ----------
+# ---------- host controls ----------
 
-@app.route("/admin")
+@app.route("/g/<code>/admin", endpoint="game_admin")
 def admin():
-    if not is_admin():
-        return admin_login_page()
+    if not current_user():
+        return login_redirect()
+    require_host()
 
     def rows(status, limit):
         subs = db.query(f"""
             SELECT s.*, p.name FROM mixer_submissions s
             JOIN mixer_players p ON p.id = s.player_id
-            WHERE s.status = ? AND s.media_key IS NOT NULL
+            WHERE p.game_id = ? AND s.status = ? AND s.media_key IS NOT NULL
             ORDER BY s.created_at {'ASC' if status == 'pending' else 'DESC'} LIMIT {int(limit)}""",
-                        (status,))
+                        (g.game_row["id"], status))
         for s in subs:
             act = cfg().ACTIVITIES.get(s["activity_id"], {})
             s["title"], s["points"] = act.get("title", s["activity_id"]), act.get("points", 0)
@@ -525,14 +658,15 @@ def admin():
 
     return render_template("admin.html", pending=rows("pending", 50),
                            approved=rows("approved", 60), hidden=rows("hidden", 60),
-                           board=leaderboard())
+                           board=leaderboard(), event=cfg().EVENT_NAME, code=g.code,
+                           join_url=url_for("game_join", _external=True),
+                           playing=bool(current_player()))
 
 
-@app.post("/admin/review")
+@app.post("/g/<code>/admin/review", endpoint="game_admin_review")
 def admin_review():
-    if not is_admin():
-        abort(403)
-    sub = db.query("SELECT * FROM mixer_submissions WHERE id = ?", (request.form.get("id", ""),), one=True)
+    require_host()
+    sub = game_submission(request.form.get("id", ""))
     action = request.form.get("action")
     if sub and action == "approve":
         db.query("UPDATE mixer_submissions SET status = 'approved', reviewed_at = ? WHERE id = ?",
@@ -551,17 +685,18 @@ def admin_review():
         note = " ".join(request.form.get("note", "").split())[:80]
         db.query("UPDATE mixer_submissions SET note = ? WHERE id = ?", (note, sub["id"]))
     if sub and request.form.get("back") == "player":
-        return redirect(url_for("admin_player", player_id=sub["player_id"]))
-    return redirect(url_for("admin"))
+        return redirect(url_for("game_admin_player", player_id=sub["player_id"]))
+    return redirect(url_for("game_admin"))
 
 
-@app.route("/admin/player/<player_id>")
+@app.route("/g/<code>/admin/player/<player_id>", endpoint="game_admin_player")
 def admin_player(player_id):
     """Everything one player has submitted, so invalid entries (including
     bingo squares that never go through the approval queue) can be removed."""
-    if not is_admin():
-        return redirect(url_for("admin"))
-    player = db.query("SELECT * FROM mixer_players WHERE id = ?", (player_id,), one=True)
+    if not current_user():
+        return login_redirect()
+    require_host()
+    player = game_player(player_id)
     if not player:
         abort(404)
     subs = db.query("SELECT * FROM mixer_submissions WHERE player_id = ? ORDER BY created_at DESC",
@@ -576,74 +711,81 @@ def admin_player(player_id):
         s["url"] = storage.url(s["media_key"])
     pts, lines = score({s["activity_id"] for s in subs if s["status"] != "rejected"})
     return render_template("admin_player.html", player=player, subs=subs, points=pts, lines=lines,
-                           role=ROLES.get(player["role"], ""))
+                           role=cfg().ROLES.get(player["role"], ""))
 
 
-@app.post("/admin/player/<player_id>/delete")
+@app.post("/g/<code>/admin/player/<player_id>/delete", endpoint="game_admin_player_delete")
 def admin_player_delete(player_id):
     """Remove a player entirely (e.g. a joke name), with their files."""
-    if not is_admin():
-        abort(403)
-    for s in db.query("SELECT media_key FROM mixer_submissions WHERE player_id = ? AND media_key IS NOT NULL",
-                      (player_id,)):
-        storage.delete(s["media_key"])
-    db.query("DELETE FROM mixer_submissions WHERE player_id = ?", (player_id,))
-    db.query("DELETE FROM mixer_players WHERE id = ?", (player_id,))
-    return redirect(url_for("admin"))
+    require_host()
+    player = game_player(player_id)
+    if player:
+        for s in db.query("""SELECT media_key FROM mixer_submissions
+                             WHERE player_id = ? AND media_key IS NOT NULL""", (player["id"],)):
+            storage.delete(s["media_key"])
+        db.query("DELETE FROM mixer_submissions WHERE player_id = ?", (player["id"],))
+        db.query("DELETE FROM mixer_players WHERE id = ?", (player["id"],))
+    return redirect(url_for("game_admin"))
 
 
-@app.post("/admin/reset")
+@app.post("/g/<code>/admin/reset", endpoint="game_admin_reset")
 def admin_reset():
-    """Start over: 'scores' clears every submission and file but keeps the
-    players; 'everything' removes the players too. Activities are untouched."""
-    if not is_admin():
-        abort(403)
+    """Start over: 'scores' clears this game's submissions and files but keeps
+    the players; 'everything' removes the players too. Activities are untouched."""
+    require_host()
     what = request.form.get("what")
     if request.form.get("confirm", "").strip().upper() != "RESET" or what not in ("scores", "everything"):
-        return redirect(url_for("admin", reset_error=1) + "#reset")
-    for s in db.query("SELECT media_key FROM mixer_submissions WHERE media_key IS NOT NULL"):
+        return redirect(url_for("game_admin", reset_error=1) + "#reset")
+    gid = g.game_row["id"]
+    in_game = "player_id IN (SELECT id FROM mixer_players WHERE game_id = ?)"
+    for s in db.query(f"SELECT media_key FROM mixer_submissions WHERE {in_game} AND media_key IS NOT NULL",
+                      (gid,)):
         storage.delete(s["media_key"])
-    db.query("DELETE FROM mixer_submissions")
+    db.query(f"DELETE FROM mixer_submissions WHERE {in_game}", (gid,))
     if what == "everything":
-        db.query("DELETE FROM mixer_players")
-    return redirect(url_for("admin", reset_done=what))
+        db.query("DELETE FROM mixer_players WHERE game_id = ?", (gid,))
+    return redirect(url_for("game_admin", reset_done=what))
 
 
-@app.route("/admin/content", methods=["GET", "POST"])
+@app.route("/g/<code>/admin/content", methods=["GET", "POST"], endpoint="game_admin_content")
 def admin_content():
-    if not is_admin():
-        return redirect(url_for("admin"))
-    data, error, saved = game.raw(), None, False
+    if not current_user():
+        return login_redirect()
+    require_host()
+    data, error, saved = g.game_row["pack"], None, False
     if request.method == "POST":
         try:
             submitted = json.loads(request.form.get("data", ""))
         except ValueError:
             submitted = None
-        if not isinstance(submitted, dict):
-            error = "Couldn't read the form — try again."
-        else:
-            try:
-                game.save(submitted)
-                data, saved = game.raw(), True
-            except ValueError as e:
-                error, data = str(e), {**data, **submitted}  # keep their edits on screen
+        try:
+            game.save_pack(g.game_row["id"], submitted)
+            data, saved = game.by_code(g.code)["pack"], True
+        except ValueError as e:
+            error = str(e)
+            if isinstance(submitted, dict):
+                data = {**data, **submitted}  # keep their edits on screen
     return render_template("admin_content.html", data=data, proofs=game.PROOFS,
                            error=error, saved=saved), (400 if error else 200)
 
 
-@app.post("/admin/content/reset")
+@app.post("/g/<code>/admin/content/reset", endpoint="game_admin_content_reset")
 def admin_content_reset():
-    if not is_admin():
-        abort(403)
-    game.reset()
-    return redirect(url_for("admin_content"))
+    """Put this game's activities back to the pack it was made from."""
+    require_host()
+    row = g.game_row
+    if row["id"] == game.LEGACY_ID:
+        pack = game.legacy_pack()
+    else:
+        found = sets.load(row["pack_id"], row["host_id"]) if row["pack_id"] else None
+        pack = found[1] if found else None
+    if pack:
+        pack["event_name"] = row["pack"]["event_name"]
+        game.save_pack(row["id"], pack)
+    return redirect(url_for("game_admin_content"))
 
 
-@app.post("/admin/logout")
-def admin_logout():
-    session.pop("admin", None)
-    return redirect(url_for("admin"))
-
+import sets_views  # noqa: E402  (registers /sets routes on app)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))

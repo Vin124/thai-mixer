@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>New game · Mixer</title>
+</head>
+<body>
+  <div class="flag"></div>
+  <main class="wrap wide">
+    <p><a href="{{ url_for('home') }}">← Mixer home</a></p>
+    <h1>Start a game</h1>
+    <p class="sub">Pick a pack, name your party, and you'll get a QR code and a join code to share.</p>
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('new_game') }}">
+      <label class="field">
+        <span>Party name (optional)</span>
+        <input class="input" name="title" value="{{ title }}" maxlength="60" placeholder="e.g. Nok's birthday">
+      </label>
+
+      <section class="section">
+        <h2>Pick a pack</h2>
+        <div class="packs">
+          {% for p in library %}
+          <label class="pack pick">
+            <input type="radio" name="pack" value="{{ p.id }}" required {% if p.id == chosen %}checked{% endif %}>
+            <span class="pack-emoji" aria-hidden="true">{{ p.emoji }}</span>
+            <h3>{{ p.title }}</h3>
+            <p>{{ p.description }}</p>
+            {% if not p.builtin %}<span class="badge">{{ "Your set" if p.mine else "by " ~ (p.owner or "someone") }}</span>{% endif %}
+          </label>
+          {% endfor %}
+        </div>
+        <p class="sub"><a href="{{ url_for('sets_index') }}">Make your own set →</a></p>
+      </section>
+
+      <button class="btn" type="submit">Create game →</button>
+    </form>
+  </main>
+</body>
+</html>

@@ -2,15 +2,20 @@
 <html lang="en">
 <head>
   {% include "_head.html" %}
-  <title>Admin · Mixer</title>
+  <title>Host · {{ event }}</title>
 </head>
 <body>
   <div class="flag"></div>
   <main class="admin">
     {% include "_admin_nav.html" %}
+    <section class="panel host-code">
+      <h1>{{ event }}</h1>
+      <p class="sub">Game code <strong class="code">{{ code }}</strong> · guests join at <a href="{{ join_url }}">{{ join_url }}</a></p>
+      {% if not playing %}<a class="btn small" href="{{ url_for('game_join') }}">Join as a player</a>{% endif %}
+    </section>
     <header>
-      <h1>Review queue <small class="sub">({{ pending|length }} waiting)</small></h1>
-      <a class="btn secondary small" href="{{ url_for('admin') }}">↻ Refresh</a>
+      <h2>Review queue <small class="sub">({{ pending|length }} waiting)</small></h2>
+      <a class="btn secondary small" href="{{ url_for('game_admin') }}">↻ Refresh</a>
     </header>
 
     <h2>Waiting for approval</h2>
@@ -28,10 +33,10 @@
           {% if s.note %}<p>Found: {{ s.note }}</p>{% endif %}
         </div>
         <div class="row">
-          <form method="post" action="{{ url_for('admin_review') }}">
+          <form method="post" action="{{ url_for('game_admin_review') }}">
             <input type="hidden" name="id" value="{{ s.id }}">
             <button class="btn green small" style="width:100%" name="action" value="approve">Approve</button></form>
-          <form method="post" action="{{ url_for('admin_review') }}">
+          <form method="post" action="{{ url_for('game_admin_review') }}">
             <input type="hidden" name="id" value="{{ s.id }}">
             <button class="btn small" style="width:100%" name="action" value="reject">Reject</button></form>
         </div>
@@ -56,17 +61,17 @@
         {{ media(s) }}
         <div class="info">
           <strong>{{ s.name }}</strong><p>{{ s.title }}</p>
-          <form method="post" action="{{ url_for('admin_review') }}" class="caption-form">
+          <form method="post" action="{{ url_for('game_admin_review') }}" class="caption-form">
             <input type="hidden" name="id" value="{{ s.id }}">
             <input class="input" name="note" value="{{ s.note }}" maxlength="80" placeholder="Caption (optional)">
             <button class="btn secondary small" name="action" value="caption">Save</button>
           </form>
         </div>
         <div class="row">
-          <form method="post" action="{{ url_for('admin_review') }}">
+          <form method="post" action="{{ url_for('game_admin_review') }}">
             <input type="hidden" name="id" value="{{ s.id }}">
             <button class="btn secondary small" style="width:100%" name="action" value="hide">Hide</button></form>
-          <form method="post" action="{{ url_for('admin_review') }}"
+          <form method="post" action="{{ url_for('game_admin_review') }}"
                 onsubmit="return confirm('Delete this photo/video and remove its points?')">
             <input type="hidden" name="id" value="{{ s.id }}">
             <button class="btn small" style="width:100%" name="action" value="reject">Delete</button></form>
@@ -84,10 +89,10 @@
         {{ media(s) }}
         <div class="info"><strong>{{ s.name }}</strong><p>{{ s.title }}{% if s.note %} — {{ s.note }}{% endif %}</p></div>
         <div class="row">
-          <form method="post" action="{{ url_for('admin_review') }}">
+          <form method="post" action="{{ url_for('game_admin_review') }}">
             <input type="hidden" name="id" value="{{ s.id }}">
             <button class="btn green small" style="width:100%" name="action" value="approve">Show again</button></form>
-          <form method="post" action="{{ url_for('admin_review') }}"
+          <form method="post" action="{{ url_for('game_admin_review') }}"
                 onsubmit="return confirm('Delete this photo/video and remove its points?')">
             <input type="hidden" name="id" value="{{ s.id }}">
             <button class="btn small" style="width:100%" name="action" value="reject">Delete</button></form>
@@ -102,9 +107,9 @@
     <div class="lb-wrap"><table class="lb">
       <tr><th>#</th><th>Name</th><th class="opt">Role</th><th class="opt">Lines</th><th>Points</th><th></th></tr>
       {% for b in board %}
-      <tr><td>{{ loop.index }}</td><td><a href="{{ url_for('admin_player', player_id=b.id) }}">{{ b.name }}</a></td>
+      <tr><td>{{ loop.index }}</td><td><a href="{{ url_for('game_admin_player', player_id=b.id) }}">{{ b.name }}</a></td>
         <td class="opt">{{ b.role }}</td><td class="opt">{{ b.lines }}</td><td><b>{{ b.points }}</b></td>
-        <td><form method="post" action="{{ url_for('admin_player_delete', player_id=b.id) }}"
+        <td><form method="post" action="{{ url_for('game_admin_player_delete', player_id=b.id) }}"
                   onsubmit='return confirm({{ ("Delete " ~ b.name ~ " and everything they submitted?") | tojson }})'>
           <button class="btn ghost small ed-del" type="submit" title="Delete player">Delete</button></form></td></tr>
       {% else %}
@@ -117,7 +122,7 @@
     {% elif request.args.reset_done == 'everything' %}<div class="saved">✓ Everything cleared. Everyone has to join again.</div>
     {% elif request.args.reset_error %}<div class="error">Type RESET in the box to confirm.</div>{% endif %}
     <div class="danger">
-      <form method="post" action="{{ url_for('admin_reset') }}"
+      <form method="post" action="{{ url_for('game_admin_reset') }}"
             onsubmit="return confirm('Really reset? This can\'t be undone.')">
         <p>Use this after a practice run. Your edited activities are kept either way.</p>
         <label class="field"><span>Type RESET to confirm</span>

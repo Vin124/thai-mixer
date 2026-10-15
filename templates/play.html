@@ -35,7 +35,7 @@
       <div class="bingo" id="bingo"></div>
     </section>
     <section data-panel="challenges" hidden>
-      <p class="hint">Grab a พี่, do the thing, upload the proof.</p>
+      <p class="hint">Grab someone, do the thing, upload the proof.</p>
       <div class="cards" id="challenges"></div>
     </section>
     <section data-panel="perform" hidden>
@@ -54,14 +54,20 @@
       <ol class="board" id="board"></ol>
     </section>
 
-    <form class="foot" method="post" action="{{ url_for('leave') }}"
-          {% if player.auth_user_id %}
-          onsubmit="return confirm('Sign out? Your points stay — sign back in with Google any time.')"
-          {% else %}
-          onsubmit="return confirm('Leave this device? Your points stay, but you can\'t log back in as yourself.')"
-          {% endif %}>
-      <button class="btn ghost small" type="submit">Not {{ player.name }}?</button>
-    </form>
+    <div class="foot">
+      {% if is_host %}<a class="btn secondary small" href="{{ url_for('game_admin') }}">Host controls</a>{% endif %}
+      {% if player.user_id %}
+      <form method="post" action="{{ url_for('logout') }}"
+            onsubmit="return confirm('Sign out on this phone? Your points stay — sign back in with Google any time.')">
+        <button class="btn ghost small" type="submit">Not {{ player.name }}? Sign out</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ url_for('game_leave') }}"
+            onsubmit="return confirm('Leave this device? Your points stay, but you can't log back in as yourself.')">
+        <button class="btn ghost small" type="submit">Not {{ player.name }}?</button>
+      </form>
+      {% endif %}
+    </div>
   </main>
 
   <div class="sheet-bg" id="sheet" hidden>
@@ -95,7 +101,8 @@
 
   <div class="toast" id="toast" hidden></div>
 
-  <script>window.GAME = {{ game | tojson }}; window.ME = {{ player.name | tojson }};</script>
+  <script>window.GAME = {{ game | tojson }}; window.ME = {{ player.name | tojson }};
+    window.BASE = {{ url_for('game_join') | tojson }};</script>
   <script src="{{ url_for('static', filename='play.js') }}"></script>
 </body>
 </html>

@@ -8,27 +8,28 @@
   <div class="flag"></div>
   <main class="wrap">
     <div class="hero">
-      <div class="emoji">🐘</div>
+      <div class="emoji">🎉</div>
       <h1>{{ event }}</h1>
-      <p class="sub">Find people, team up with a พี่, show off — earn points.</p>
+      <p class="sub">Find people, team up, show off — earn points. Game code <strong>{{ code }}</strong></p>
     </div>
 
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
-    {% if not pending %}
-    {% if sign_in %}
-    <a class="btn" href="{{ url_for('login_google') }}">Continue with Google</a>
-    <p class="sub">Sign in once and you can get back to your points from any phone.</p>
-    {% elif not error %}
-    <div class="error">Sign-in isn't set up on this server yet.</div>
-    {% endif %}
+    {% if not user %}
+      {% if sign_in %}
+      <a class="btn" href="{{ url_for('login_google', next=url_for('game_join')) }}">Continue with Google to join</a>
+      <p class="sub">Sign in once and you can get back to your points from any phone.</p>
+      {% else %}
+      <div class="error">Sign-in isn't set up on this server yet.</div>
+      {% endif %}
     {% else %}
-    <form method="post" action="{{ url_for('join') }}">
+    <form method="post" action="{{ url_for('game_join') }}">
       <label class="field">
-        <span>Your name</span>
+        <span>Your name in this game</span>
         <input class="input" name="name" value="{{ name or '' }}" maxlength="40"
                autocomplete="name" placeholder="First name + nickname" required autofocus>
       </label>
+      {% if roles %}
       <div class="field">
         <span>You are a…</span>
         <div class="roles">
@@ -38,8 +39,10 @@
           {% endfor %}
         </div>
       </div>
+      {% endif %}
       <button class="btn" type="submit">Let's go →</button>
     </form>
+    <p class="sub">Signed in as {{ user.email }} · <a href="{{ url_for('home') }}">Mixer home</a></p>
     {% endif %}
   </main>
 </body>

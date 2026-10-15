@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   {% include "_head.html" %}
-  <title>Edit activities · Admin</title>
+  <title>Edit activities · Host</title>
 </head>
 <body>
   <div class="flag"></div>
@@ -57,7 +57,7 @@
       </div>
     </form>
 
-    <form method="post" action="{{ url_for('admin_content_reset') }}" class="ed-reset"
+    <form method="post" action="{{ url_for('game_admin_content_reset') }}" class="ed-reset"
           onsubmit="return confirm('Throw away all edits and go back to the original activities?')">
       <button class="btn ghost small" type="submit">Reset everything to the original activities</button>
     </form>

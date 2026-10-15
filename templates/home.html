@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {% include "_head.html" %}
+  <title>Mixer — the house-party game</title>
+  <meta name="description" content="Host a party game in a minute: guests scan a QR, hunt for people on a bingo card, team up for photo challenges, perform, and vote for the winning photo.">
+</head>
+<body>
+  <div class="flag"></div>
+  <main class="wrap wide">
+
+    <section class="home-hero">
+      <div class="emoji-row" aria-hidden="true">🎉 🪩 📸 🎤</div>
+      <h1><span class="brand">Mixer</span> — the house-party game</h1>
+      <p class="pitch">Nobody stands by the snacks. One QR code turns your guests into a room full of people hunting, teaming up, showing off and voting for the best photo of the night.</p>
+
+      {% if error %}<div class="error" role="alert" style="max-width:720px;margin:20px auto 0;text-align:left">{{ error }}</div>{% endif %}
+
+      <div class="cta-grid">
+        <div class="panel">
+          <h2>🎈 Throw a game</h2>
+          <p class="sub">Pick a pack, get a QR code, put it on the fridge.</p>
+          <a class="btn" href="{{ url_for('new_game') }}">Create a game</a>
+        </div>
+        <div class="panel">
+          <h2>🎟️ Got a code?</h2>
+          <p class="sub">Type the 6 letters your host shared.</p>
+          <form class="join-row" method="get" action="{{ url_for('join_code') }}">
+            <label for="join-code" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Game code</label>
+            <input class="input" id="join-code" name="code" maxlength="6" required
+                   autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false"
+                   placeholder="ABCDEF">
+            <button class="btn" type="submit">Join</button>
+          </form>
+        </div>
+      </div>
+
+      {% if user %}
+      <div class="signin-note">
+        Signed in as <strong>{{ user.name }}</strong>
+        <form method="post" action="{{ url_for('logout') }}">
+          <button class="btn ghost small" type="submit">Sign out</button>
+        </form>
+      </div>
+      {% elif sign_in %}
+      <div class="signin-note">
+        <a class="btn secondary small" href="{{ url_for('login_google', next='/') }}">Sign in with Google</a>
+        <p class="sub">So your games and points follow you to any phone.</p>
+      </div>
+      {% endif %}
+    </section>
+
+    {% if user %}
+    <section class="section" aria-labelledby="your-games">
+      <h2 id="your-games">Your games</h2>
+      {% if games %}
+      <p class="sub">Pick up where the party left off.</p>
+      <ul class="games">
+        {% for g in games %}
+        <li class="game">
+          <div class="body">
+            <strong>{{ g.title }}{% if g.is_host %}<span class="badge">Host</span>{% endif %}</strong>
+            <span class="meta"><span class="code">{{ g.code }}</span> · {{ g.players }} player{{ '' if g.players == 1 else 's' }}</span>
+          </div>
+          <div class="actions">
+            <a class="btn small" href="{{ url_for('game_play', code=g.code) }}">Play</a>
+            {% if g.is_host %}<a class="btn secondary small" href="{{ url_for('game_admin', code=g.code) }}">Host tools</a>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty">No games yet. Start one above, or join a friend's with their code.</div>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    <section class="section" aria-labelledby="how">
+      <h2 id="how">How it works</h2>
+      <p class="sub">Four steps from awkward hellos to a photo everyone's fighting over.</p>
+      <ol class="steps">
+        <li class="step"><div class="num" aria-hidden="true">1</div><h3>Start a game</h3><p>Choose a pack or write your own prompts. Takes a minute.</p></li>
+        <li class="step"><div class="num" aria-hidden="true">2</div><h3>Share the QR</h3><p>Stick it on the door, the TV, the fridge. Guests scan and they're in.</p></li>
+        <li class="step"><div class="num" aria-hidden="true">3</div><h3>Mingle for points</h3><p>Find someone who… on the bingo card, team up for photo challenges, film a performance.</p></li>
+        <li class="step"><div class="num" aria-hidden="true">4</div><h3>Crown a winner</h3><p>Everyone up- and down-votes the photos. Best one takes the night.</p></li>
+      </ol>
+    </section>
+
+    {% if packs %}
+    <section class="section" aria-labelledby="packs">
+      <h2 id="packs">Pick your crowd</h2>
+      <p class="sub">Every pack comes with a bingo card, team-ups and performances. Tweak anything after.</p>
+      <div class="packs">
+        {% for p in packs %}
+        <a class="pack" href="{{ url_for('new_game', pack=p.id) }}">
+          <span class="pack-emoji" aria-hidden="true">{{ p.emoji }}</span>
+          <h3>{{ p.title }}</h3>
+          <p>{{ p.description }}</p>
+          <span class="go">Start with this pack →</span>
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="section own-set panel" aria-labelledby="own">
+      <h2 id="own">✏️ Make your own set</h2>
+      <p class="sub">Inside jokes, office lore, your cousin's wedding — write the prompts that only your people will get.</p>
+      <a class="btn secondary" href="{{ url_for('sets_index') }}">Make your own set</a>
+    </section>
+
+    <footer class="home-foot">
+      <p>Mixer 🎉 — made for parties, not meetings.</p>
+    </footer>
+  </main>
+</body>
+</html>
