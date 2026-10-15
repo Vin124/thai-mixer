@@ -30,11 +30,15 @@ def _request(method, path, body=None, content_type="application/json"):
         return resp.read()
 
 
-def init_storage():
+def init_storage(max_bytes, mime_types):
     if not USE_SUPABASE:
         os.makedirs(LOCAL_DIR, exist_ok=True)
         return
-    body = json.dumps({"id": BUCKET, "name": BUCKET, "public": True}).encode()
+    # Phones upload straight to the bucket (see signed_upload_url), so the
+    # bucket itself enforces the size and type limits.
+    body = json.dumps({"id": BUCKET, "name": BUCKET, "public": True,
+                       "file_size_limit": max_bytes,
+                       "allowed_mime_types": sorted(mime_types)}).encode()
     try:
         _request("POST", "bucket", body)
     except urllib.error.HTTPError as e:
@@ -49,6 +53,22 @@ def save(key, data, content_type):
     else:
         with open(os.path.join(LOCAL_DIR, key), "wb") as f:
             f.write(data)
+
+
+def signed_upload_url(key):
+    """A one-time URL the phone can PUT the file to directly. Hosts like
+    Vercel cap request bodies at 4.5 MB, so videos can't go through the app."""
+    resp = json.loads(_request("POST", f"object/upload/sign/{BUCKET}/{key}", b"{}"))
+    return f"{SUPABASE_URL}/storage/v1{resp['url']}"
+
+
+def exists(key):
+    req = urllib.request.Request(url(key), method="HEAD")
+    try:
+        with urllib.request.urlopen(req, timeout=30):
+            return True
+    except urllib.error.HTTPError:
+        return False
 
 
 def delete(key):

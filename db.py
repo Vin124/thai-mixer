@@ -25,7 +25,11 @@ else:
 def query(sql, params=(), one=False):
     """Run one statement; returns a list of dicts (or one dict / None)."""
     if USE_PG:
-        conn = _pool.getconn()
+        try:
+            conn, pooled = _pool.getconn(), True
+        except psycopg2.pool.PoolError:
+            # Busy moment: use a one-off connection rather than failing.
+            conn, pooled = psycopg2.connect(DATABASE_URL), False
         broken = False
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -38,7 +42,10 @@ def query(sql, params=(), one=False):
                 conn.rollback()
             raise
         finally:
-            _pool.putconn(conn, close=broken)
+            if pooled:
+                _pool.putconn(conn, close=broken)
+            else:
+                conn.close()
     else:
         with _sqlite_lock:
             conn = sqlite3.connect(SQLITE_PATH)

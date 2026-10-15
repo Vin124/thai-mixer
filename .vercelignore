@@ -1,0 +1,8 @@
+.env
+.env.*
+.secret_key
+mixer.db
+uploads/
+__pycache__/
+venv/
+.venv/

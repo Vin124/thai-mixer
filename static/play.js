@@ -10,7 +10,7 @@ let chosen = null;    // {blob, kind, name} ready to upload
 const STATUS_TEXT = {
   done: "✓ Done",
   pending: "⏳ Waiting for approval (points count already)",
-  approved: "✓ Approved",
+  approved: "✓ Points counted",
   rejected: "✗ Rejected — try again",
 };
 
@@ -124,11 +124,10 @@ function openSheet(a) {
   showPreview(s && s.status !== "rejected" && s.mediaUrl ? { url: s.mediaUrl, kind: s.mediaType } : null);
   $("sheet-error").hidden = true;
   $("progress").hidden = true;
-  const locked = s && s.status === "approved";
-  $("submit").hidden = locked;
+  $("submit").hidden = false;
   $("submit").disabled = false;
   $("submit").textContent = s && s.status !== "rejected" ? "Replace submission" : "Submit";
-  $("undo").hidden = !s || locked;
+  $("undo").hidden = !s;
   $("sheet").hidden = false;
   if (a.proof === "name") setTimeout(() => $("note").focus(), 50);
 }
@@ -206,48 +205,68 @@ $("file").addEventListener("change", async (e) => {
   showPreview({ url: URL.createObjectURL(chosen.blob), kind, blob: true });
 });
 
-$("sheet-form").addEventListener("submit", (e) => {
+// XHR rather than fetch so we can show upload progress on slow wifi.
+// Resolves to { status, body } (body parsed as JSON when possible).
+function send(method, url, data, { contentType, onProgress } = {}) {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    if (onProgress) xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) onProgress(ev.loaded / ev.total); };
+    xhr.onload = () => {
+      let body = {};
+      try { body = JSON.parse(xhr.responseText); } catch (_) {}
+      resolve({ status: xhr.status, body });
+    };
+    xhr.onerror = () => resolve({ status: 0, body: {} });
+    xhr.open(method, url);
+    if (contentType) xhr.setRequestHeader("Content-Type", contentType);
+    xhr.send(data);
+  });
+}
+
+function form(fields) {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+  return fd;
+}
+
+$("sheet-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const a = current;
   const note = $("note").value.trim();
   if (a.proof === "name" && !note) return fail("Type the name of the person you found.");
   if (a.proof !== "name" && !chosen) return fail("Add your photo or video first.");
 
-  const fd = new FormData();
-  fd.append("activity_id", a.id);
-  fd.append("note", note);
-  if (chosen) fd.append("media", chosen.blob, chosen.name);
-
-  // XHR rather than fetch so we can show upload progress on slow wifi.
-  const xhr = new XMLHttpRequest();
   const bar = $("progress");
+  const progress = (f) => { bar.firstElementChild.style.width = `${f * 100}%`; };
   bar.hidden = !chosen;
-  bar.firstElementChild.style.width = "0";
+  progress(0);
   $("submit").disabled = true;
   $("submit").textContent = chosen ? "Uploading…" : "Saving…";
-  xhr.upload.onprogress = (ev) => {
-    if (ev.lengthComputable) bar.firstElementChild.style.width = `${(ev.loaded / ev.total) * 100}%`;
-  };
-  xhr.onload = () => {
-    let body = {};
-    try { body = JSON.parse(xhr.responseText); } catch (_) {}
-    if (xhr.status === 200) {
-      closeSheet();
-      toast(body.status === "pending" ? "Sent! Points added — admins will check the pic." : "Nice! Points added.");
-      refresh();
-    } else {
-      $("submit").disabled = false;
-      $("submit").textContent = "Try again";
-      fail(body.error || "Upload failed — check your connection and try again.");
-    }
-  };
-  xhr.onerror = () => {
+  const retry = (msg) => {
     $("submit").disabled = false;
     $("submit").textContent = "Try again";
-    fail("Upload failed — check your connection and try again.");
+    fail(msg || "Upload failed — check your connection and try again.");
   };
-  xhr.open("POST", "/api/submit");
-  xhr.send(fd);
+
+  const fd = form({ activity_id: a.id, note });
+  if (chosen && G.directUpload) {
+    // Straight to Supabase: the app's host can't take big files.
+    const type = chosen.blob.type;
+    const r = await send("POST", "/api/upload-url",
+      form({ activity_id: a.id, content_type: type, size: chosen.blob.size }));
+    if (r.status !== 200) return retry(r.body.error);
+    const up = await send("PUT", r.body.url, chosen.blob, { contentType: type, onProgress: progress });
+    if (up.status !== 200) return retry(up.body.message);
+    fd.append("media_key", r.body.key);
+  } else if (chosen) {
+    fd.append("media", chosen.blob, chosen.name);
+  }
+
+  const r = await send("POST", "/api/submit", fd, { onProgress: G.directUpload ? null : progress });
+  if (r.status !== 200) return retry(r.body.error);
+  closeSheet();
+  toast(r.body.status === "approved" ? "Sent! Points added — it's on the big screen." : "Nice! Points added.");
+  refresh();
 });
 
 $("undo").addEventListener("click", async () => {

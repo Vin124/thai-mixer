@@ -57,6 +57,10 @@ app.secret_key = _secret_key()
 app.config.update(
     MAX_CONTENT_LENGTH=MAX_UPLOAD_MB * 1024 * 1024,
     PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    # Only send the cookie when the session changes. Otherwise a player-page
+    # poll that was in flight during an admin login answers with the old
+    # cookie and logs the admin straight back out.
+    SESSION_REFRESH_EACH_REQUEST=False,
     SESSION_COOKIE_SAMESITE="Lax",
     # https-only cookies once hosted; plain http is fine on your own computer.
     SESSION_COOKIE_SECURE=(os.environ.get("COOKIE_SECURE") or ("1" if db.USE_PG else "0")) == "1",
@@ -73,7 +77,7 @@ EXTENSIONS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "im
               "video/quicktime": "mov", "video/webm": "webm"}
 
 db.init_db()
-storage.init_storage()
+storage.init_storage(MAX_UPLOAD_MB * 1024 * 1024, EXTENSIONS)
 
 
 def now():
@@ -185,7 +189,8 @@ def game_payload():
     poll so admin edits show up without a reload)."""
     return {"event": cfg().EVENT_NAME, "bingo": cfg().BINGO, "challenges": cfg().CHALLENGES,
             "performances": cfg().PERFORMANCES, "lineBonus": cfg().BINGO_LINE_BONUS,
-            "maxUploadMb": MAX_UPLOAD_MB, "maxVideoSeconds": MAX_VIDEO_SECONDS}
+            "maxUploadMb": MAX_UPLOAD_MB, "maxVideoSeconds": MAX_VIDEO_SECONDS,
+            "directUpload": storage.USE_SUPABASE}
 
 
 @app.route("/api/me")
@@ -204,6 +209,41 @@ def api_me():
                                         "mediaType": s["media_type"]} for s in subs})
 
 
+def media_kind(ctype, proof):
+    """("image" | "video", None) if this file type fits the activity, else (None, error)."""
+    kind = "image" if ctype in IMAGE_TYPES else "video" if ctype in VIDEO_TYPES else None
+    if kind is None:
+        return None, "That file type isn't supported — use a normal photo or video."
+    if proof == "photo" and kind != "image":
+        return None, "This one needs a photo."
+    if proof == "video" and kind != "video":
+        return None, "This one needs a video."
+    return kind, None
+
+
+@app.post("/api/upload-url")
+def api_upload_url():
+    """Step 1 of a direct upload: the phone gets a one-time Supabase URL,
+    PUTs the file there, then calls /api/submit with the key."""
+    player = current_player()
+    if not player:
+        return jsonify(error="Your session expired — rejoin from the QR code."), 401
+    if not storage.USE_SUPABASE:
+        return jsonify(error="Direct uploads aren't set up."), 400
+    activity = cfg().ACTIVITIES.get(request.form.get("activity_id", ""))
+    if not activity:
+        return jsonify(error="That activity doesn't exist anymore."), 400
+    ctype = request.form.get("content_type", "").lower()
+    _, error = media_kind(ctype, activity["proof"])
+    if error:
+        return jsonify(error=error), 400
+    if request.form.get("size", type=int, default=0) > MAX_UPLOAD_MB * 1024 * 1024:
+        return too_large(None)
+    # Keys start with the player's id so /api/submit can check the file is theirs.
+    key = f"{player['id']}/{uuid.uuid4()}.{EXTENSIONS[ctype]}"
+    return jsonify(key=key, url=storage.signed_upload_url(key))
+
+
 @app.post("/api/submit")
 def api_submit():
     player = current_player()
@@ -215,47 +255,57 @@ def api_submit():
 
     existing = db.query("SELECT * FROM mixer_submissions WHERE player_id = ? AND activity_id = ?",
                         (player["id"], activity["id"]), one=True)
-    if existing and existing["status"] == "approved":
-        return jsonify(error="Already approved — nice!"), 400
 
     note = " ".join(request.form.get("note", "").split())[:80]
     upload = request.files.get("media")
+    uploaded_key = request.form.get("media_key", "")
     proof = activity["proof"]
     if proof == "name" and not note:
         return jsonify(error="Type the name of the person you found."), 400
-    if proof in ("photo", "video", "either") and not upload:
+    if proof in ("photo", "video", "either") and not (upload or uploaded_key):
         return jsonify(error="Add a photo or video as proof."), 400
 
     media_key = media_type = None
-    if upload:
+    if uploaded_key:
+        # Already sent straight to Supabase via /api/upload-url.
+        owner, _, filename = uploaded_key.partition("/")
+        ctype = next((t for t, ext in EXTENSIONS.items()
+                      if filename.endswith(f".{ext}")), "")
+        media_type, error = media_kind(ctype, proof)
+        if owner != player["id"] or "/" in filename or error:
+            return jsonify(error=error or "That upload isn't yours — try again."), 400
+        if not storage.exists(uploaded_key):
+            return jsonify(error="The upload didn't finish — try again."), 400
+        media_key = uploaded_key
+    elif upload:
         ctype = (upload.mimetype or "").lower()
-        kind = "image" if ctype in IMAGE_TYPES else "video" if ctype in VIDEO_TYPES else None
-        if kind is None:
-            return jsonify(error="That file type isn't supported — use a normal photo or video."), 400
-        if proof == "photo" and kind != "image":
-            return jsonify(error="This one needs a photo."), 400
-        if proof == "video" and kind != "video":
-            return jsonify(error="This one needs a video."), 400
+        media_type, error = media_kind(ctype, proof)
+        if error:
+            return jsonify(error=error), 400
         data = upload.read()
         if not data:
             return jsonify(error="The file was empty — try again."), 400
         media_key = f"{uuid.uuid4()}.{EXTENSIONS[ctype]}"
-        media_type = kind
         storage.save(media_key, data, ctype)
 
-    status = "pending" if media_key else "done"
+    # No approval step: media goes straight to the projector. Admins can
+    # still hide or reject it from /admin.
+    # reviewed_at orders the projector feed, newest first.
+    status = "approved" if media_key else "done"
+    reviewed_at = now() if media_key else None
     if existing:
-        if existing["media_key"]:
+        if existing["media_key"] and existing["media_key"] != media_key:
             storage.delete(existing["media_key"])
         db.query("""UPDATE mixer_submissions SET note = ?, media_key = ?, media_type = ?,
-                    status = ?, created_at = ?, reviewed_at = NULL WHERE id = ?""",
-                 (note, media_key, media_type, status, now(), existing["id"]))
+                    status = ?, created_at = ?, reviewed_at = ? WHERE id = ?""",
+                 (note, media_key, media_type, status, now(), reviewed_at, existing["id"]))
     else:
         db.query("""INSERT INTO mixer_submissions
-                    (id, player_id, activity_id, note, media_key, media_type, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (id, player_id, activity_id, note, media_key, media_type, status,
+                     created_at, reviewed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                  (str(uuid.uuid4()), player["id"], activity["id"], note,
-                  media_key, media_type, status, now()))
+                  media_key, media_type, status, now(), reviewed_at))
     return jsonify(ok=True, status=status)
 
 
