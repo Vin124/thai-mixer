@@ -20,7 +20,7 @@ Packs: House Party, Entrepreneurs, Asian Diaspora, Thai Club, Work Team and Fres
 | `/g/<code>/admin` | the game's host | review media, edit activities, fix anyone's score |
 | `/g/<code>/qr` | print it | a big QR code for this game |
 
-Everyone signs in with Google. The person who created a game is its host; anyone in `ADMIN_EMAILS` can run every game. The original Thai Club event lives on as the game with code **THAI**, with all its players and photos, and the old `/play`, `/screen`, `/admin` and `/qr` links point there.
+Everyone signs in with Google. The person who created a game is its host. Anyone in `ADMIN_EMAILS` can run every game, and so can any account a superadmin has made an admin or superadmin on [mixer-admin](https://github.com/Vin124/mixer-admin)'s Users page (`mixer_users.is_admin` / `is_superadmin`). The original Thai Club event lives on as the game with code **THAI**, with all its players and photos, and the old `/play`, `/screen`, `/admin` and `/qr` links point there.
 
 ## Change the activities
 

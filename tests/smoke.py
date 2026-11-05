@@ -131,6 +131,17 @@ check("Ann isn't host of the Thai Club game", a.get("/g/THAI/admin").status_code
 boss = client("boss")
 check("ADMIN_EMAILS can run the Thai Club game", boss.get("/g/THAI/admin").status_code == 200)
 check("ADMIN_EMAILS can run anyone's game", boss.get(f"/g/{code1}/admin").status_code == 200)
+# Access a superadmin gives on mixer-admin's Users page (Cy hosts nothing yet).
+check("new accounts have no admin flags",
+      db.query("SELECT is_admin, is_superadmin FROM mixer_users WHERE id = 'uc'", one=True)
+      == {"is_admin": 0, "is_superadmin": 0})
+check("Cy can't run Ann's game", dup.get(f"/g/{code1}/admin").status_code == 403)
+for col in ("is_admin", "is_superadmin"):
+    db.query(f"UPDATE mixer_users SET {col} = 1 WHERE id = 'uc'")
+    check(f"{col} runs anyone's game", dup.get(f"/g/{code1}/admin").status_code == 200)
+    check(f"{col} runs the Thai Club game", dup.get("/g/THAI/admin").status_code == 200)
+    db.query(f"UPDATE mixer_users SET {col} = 0 WHERE id = 'uc'")
+check("taking the flag away takes the access away", dup.get(f"/g/{code1}/admin").status_code == 403)
 
 # --- isolation between games ---
 c2 = client("c")

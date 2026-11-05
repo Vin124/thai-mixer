@@ -12,7 +12,7 @@ Pages:
   /g/<code>         a game's join page (what its QR points at)
   /g/<code>/play    the player's phone view
   /g/<code>/screen  projector: live photo/video feed + leaderboard
-  /g/<code>/admin   host controls (the host, or anyone in ADMIN_EMAILS)
+  /g/<code>/admin   host controls (the host, ADMIN_EMAILS, or an admin / superadmin)
   /g/<code>/qr      printable QR code for this game
 
 Every /g/<code>/... route runs with that game loaded (see load_game), and
@@ -108,8 +108,11 @@ def current_user():
 
 
 def is_superadmin():
+    """May run every game: anyone in ADMIN_EMAILS, or an account a superadmin
+    made an admin or superadmin on mixer-admin's Users page."""
     user = current_user()
-    return bool(user and user["email"].lower() in ADMIN_EMAILS)
+    return bool(user and (user["email"].lower() in ADMIN_EMAILS
+                          or user.get("is_admin") or user.get("is_superadmin")))
 
 
 def is_host():

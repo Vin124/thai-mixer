@@ -112,6 +112,10 @@ def init_db():
             name TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         )""")
+    # Set by a superadmin on mixer-admin's Users page. Either one lets the
+    # account run every game here, like ADMIN_EMAILS (app.is_superadmin).
+    _add_column("mixer_users", "is_superadmin", "BOOLEAN NOT NULL DEFAULT FALSE")
+    _add_column("mixer_users", "is_admin", "BOOLEAN NOT NULL DEFAULT FALSE")
     # A game is one party with its own join code and a copy of its pack
     # (JSON, see game.py). host_id NULL = only ADMIN_EMAILS can run it.
     query("""
