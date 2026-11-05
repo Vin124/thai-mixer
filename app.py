@@ -237,6 +237,17 @@ def login_google():
     return redirect(auth.authorize_url(url_for("auth_callback", _external=True), verifier))
 
 
+def claim_invite(user):
+    """Access an admin gave this email on mixer-admin before the person ever
+    signed in: set the flag, then drop the invite. Only adds access. The email
+    is one Google confirmed (auth.exchange)."""
+    invite = db.query("SELECT role FROM mixer_admin_invites WHERE email = ?", (user["email"],), one=True)
+    if invite:
+        column = "is_superadmin" if invite["role"] == "superadmin" else "is_admin"
+        db.query(f"UPDATE mixer_users SET {column} = ? WHERE id = ?", (True, user["id"]))
+        db.query("DELETE FROM mixer_admin_invites WHERE email = ?", (user["email"],))
+
+
 @app.route("/auth/callback")
 def auth_callback():
     """Google -> Supabase -> here with ?code=. Remember the account, then go
@@ -255,6 +266,7 @@ def auth_callback():
     else:
         db.query("INSERT INTO mixer_users (id, email, name, created_at) VALUES (?, ?, ?, ?)",
                  (user["id"], user["email"], user["name"], now()))
+    claim_invite(user)
     session.permanent = True
     session["user_id"] = user["id"]
     return redirect(safe_next(flow["next"]))

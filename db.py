@@ -116,6 +116,15 @@ def init_db():
     # account run every game here, like ADMIN_EMAILS (app.is_superadmin).
     _add_column("mixer_users", "is_superadmin", "BOOLEAN NOT NULL DEFAULT FALSE")
     _add_column("mixer_users", "is_admin", "BOOLEAN NOT NULL DEFAULT FALSE")
+    # Access given by email on mixer-admin to someone who hasn't signed in
+    # yet; claimed and deleted at their first sign-in (app.claim_invite).
+    query("""
+        CREATE TABLE IF NOT EXISTS mixer_admin_invites (
+            email TEXT PRIMARY KEY CHECK (email = lower(email)),
+            role TEXT NOT NULL CHECK (role IN ('admin', 'superadmin')),
+            invited_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )""")
     # A game is one party with its own join code and a copy of its pack
     # (JSON, see game.py). host_id NULL = only ADMIN_EMAILS can run it.
     query("""
@@ -204,5 +213,5 @@ def init_db():
         # anon key. RLS with no policies shuts that door; this app connects
         # as the database owner, which RLS doesn't apply to.
         for table in ("mixer_users", "mixer_games", "mixer_sets", "mixer_players",
-                      "mixer_submissions", "mixer_votes", "mixer_settings"):
+                      "mixer_submissions", "mixer_votes", "mixer_settings", "mixer_admin_invites"):
             query(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")

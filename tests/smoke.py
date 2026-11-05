@@ -44,6 +44,7 @@ USERS = {
     "b": {"id": "ub", "email": "b@example.com", "name": "Bo Guest"},
     "c": {"id": "uc", "email": "c@example.com", "name": "Cy Other"},
     "boss": {"id": "uboss", "email": "boss@example.com", "name": "Boss"},
+    "d": {"id": "ud", "email": "d@example.com", "name": "Di Invited"},
 }
 auth.exchange = lambda code, verifier: dict(USERS[code])
 
@@ -142,6 +143,15 @@ for col in ("is_admin", "is_superadmin"):
     check(f"{col} runs the Thai Club game", dup.get("/g/THAI/admin").status_code == 200)
     db.query(f"UPDATE mixer_users SET {col} = 0 WHERE id = 'uc'")
 check("taking the flag away takes the access away", dup.get(f"/g/{code1}/admin").status_code == 403)
+# An invite made on mixer-admin before the person ever signed in.
+db.query("INSERT INTO mixer_admin_invites (email, role, created_at) VALUES ('d@example.com', 'admin', 't')")
+d = client("d")
+check("an invite becomes is_admin at first sign-in, and is used up",
+      db.query("SELECT is_admin, is_superadmin FROM mixer_users WHERE id = 'ud'", one=True)
+      == {"is_admin": 1, "is_superadmin": 0}
+      and not db.query("SELECT 1 FROM mixer_admin_invites WHERE email = 'd@example.com'"))
+check("the invited admin runs anyone's game", d.get(f"/g/{code1}/admin").status_code == 200)
+db.query("UPDATE mixer_users SET is_admin = 0 WHERE id = 'ud'")
 
 # --- isolation between games ---
 c2 = client("c")
